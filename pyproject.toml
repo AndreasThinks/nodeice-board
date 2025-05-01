@@ -1,0 +1,13 @@
+[project]
+name = "nodeice-board"
+version = "0.1.0"
+description = "Meshtastic-based notice board application"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "meshtastic>=2.6.2",
+    "pypubsub>=4.0.3",
+]
+
+[project.scripts]
+nodeice-board = "main:main"

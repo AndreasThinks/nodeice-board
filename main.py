@@ -6,6 +6,12 @@ This application allows Meshtastic users to post messages and comments
 to a central notice board node. Messages older than 7 days are automatically
 deleted.
 
+Security features:
+- Input validation and sanitization to prevent SQL injection
+- Rate limiting to prevent abuse
+- Connection timeout and retry logic for database operations
+- Parameter validation for all database operations
+
 Usage:
     python main.py [--device_path=<path>] [--db_path=<path>] [--config_path=<path>]
 
@@ -23,6 +29,7 @@ import logging
 import argparse
 import traceback
 from typing import Optional
+import re
 
 from nodeice_board.database import Database
 from nodeice_board.meshtastic_interface import MeshtasticInterface
@@ -49,7 +56,36 @@ def parse_args():
     parser.add_argument('--device_path', help='Path to the Meshtastic device (optional, auto-detects if not provided)')
     parser.add_argument('--db_path', default='nodeice_board.db', help='Path to the database file')
     parser.add_argument('--config_path', default='config.yaml', help='Path to the configuration file')
-    return parser.parse_args()
+    
+    args = parser.parse_args()
+    
+    # Validate paths to prevent path traversal attacks
+    for path_arg in [args.db_path, args.config_path]:
+        if path_arg and not is_safe_path(path_arg):
+            parser.error(f"Unsafe path: {path_arg}")
+    
+    return args
+
+def is_safe_path(path: str) -> bool:
+    """
+    Check if a path is safe (no directory traversal).
+    
+    Args:
+        path: The path to check.
+        
+    Returns:
+        True if the path is safe, False otherwise.
+    """
+    # Check for common directory traversal patterns
+    if re.search(r'\.\./', path) or re.search(r'\.\.\\', path):
+        return False
+        
+    # Normalize path to catch more complex traversal attempts
+    norm_path = os.path.normpath(path)
+    if '..' in norm_path.split(os.sep):
+        return False
+        
+    return True
 
 
 class NodeiceBoard:
@@ -63,7 +99,16 @@ class NodeiceBoard:
             device_path: Path to the Meshtastic device. If None, auto-detect.
             db_path: Path to the SQLite database file.
             config_path: Path to the configuration file.
+            
+        Raises:
+            ValueError: If paths are invalid.
         """
+        # Validate paths
+        if not is_safe_path(db_path):
+            raise ValueError(f"Unsafe database path: {db_path}")
+            
+        if not is_safe_path(config_path):
+            raise ValueError(f"Unsafe config path: {config_path}")
         self.device_path = device_path
         self.db_path = db_path
         self.config_path = config_path
@@ -190,8 +235,19 @@ class NodeiceBoard:
         try:
             logger.info(f"NodeiceBoard.on_message_received called with message from {sender_id}: {message}")
             
+            # Basic input validation
             if not message:
                 logger.warning(f"Received empty message from {sender_id}")
+                return
+                
+            # Limit message size to prevent DoS
+            if len(message) > 2000:  # Reasonable limit for Meshtastic messages
+                logger.warning(f"Message too long from {sender_id}: {len(message)} chars")
+                if self.mesh_interface:
+                    self.mesh_interface.send_message(
+                        "Message too long. Please keep messages under 2000 characters.",
+                        sender_id
+                    )
                 return
                 
             if self.command_handler:

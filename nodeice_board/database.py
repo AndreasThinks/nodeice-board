@@ -4,7 +4,7 @@ import time
 import threading
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, Union
 
 
 class Database:
@@ -15,14 +15,45 @@ class Database:
         self.logger = logging.getLogger("NodeiceBoard")
         self.init_db()
     
-    def get_connection(self):
-        """Get a thread-local database connection."""
-        if not hasattr(self.local, 'conn') or self.local.conn is None:
-            self.logger.debug(f"Creating new database connection for thread {threading.current_thread().name}")
-            self.local.conn = sqlite3.connect(self.db_path)
-            # Enable foreign keys
-            self.local.conn.execute("PRAGMA foreign_keys = ON")
-        return self.local.conn
+    def get_connection(self, max_retries=3, retry_delay=1):
+        """
+        Get a thread-local database connection with retry logic.
+        
+        Args:
+            max_retries: Maximum number of connection attempts.
+            retry_delay: Delay in seconds between retries.
+            
+        Returns:
+            SQLite connection object.
+            
+        Raises:
+            sqlite3.OperationalError: If connection fails after max_retries.
+        """
+        retries = 0
+        last_error = None
+        
+        while retries < max_retries:
+            try:
+                if not hasattr(self.local, 'conn') or self.local.conn is None:
+                    self.logger.debug(f"Creating new database connection for thread {threading.current_thread().name}")
+                    self.local.conn = sqlite3.connect(
+                        self.db_path,
+                        timeout=10  # 10-second timeout
+                    )
+                    # Enable foreign keys
+                    self.local.conn.execute("PRAGMA foreign_keys = ON")
+                return self.local.conn
+            except sqlite3.OperationalError as e:
+                last_error = e
+                retries += 1
+                self.logger.warning(f"Database connection attempt {retries} failed: {e}")
+                if retries >= max_retries:
+                    self.logger.error(f"Failed to connect to database after {max_retries} attempts")
+                    raise
+                time.sleep(retry_delay)
+                
+        # This should not be reached due to the raise in the loop, but just in case
+        raise last_error if last_error else sqlite3.OperationalError("Failed to connect to database")
     
     def init_db(self):
         """Initialize the database if it doesn't exist."""
@@ -77,7 +108,20 @@ class Database:
             
         Returns:
             The ID of the created post.
+            
+        Raises:
+            ValueError: If content is empty or too long.
         """
+        # Validate inputs
+        if not content or not content.strip():
+            raise ValueError("Post content cannot be empty")
+            
+        if len(content) > 1000:  # Set appropriate max length
+            content = content[:1000]
+            
+        if not author_id or not author_id.strip():
+            raise ValueError("Author ID cannot be empty")
+            
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -154,7 +198,23 @@ class Database:
             
         Returns:
             The ID of the created comment.
+            
+        Raises:
+            ValueError: If content is empty or too long, or if post_id is invalid.
         """
+        # Validate inputs
+        if not isinstance(post_id, int) or post_id <= 0:
+            raise ValueError("Invalid post ID")
+            
+        if not content or not content.strip():
+            raise ValueError("Comment content cannot be empty")
+            
+        if len(content) > 1000:  # Set appropriate max length
+            content = content[:1000]
+            
+        if not author_id or not author_id.strip():
+            raise ValueError("Author ID cannot be empty")
+            
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -203,12 +263,23 @@ class Database:
             
         Returns:
             The number of posts deleted.
+            
+        Raises:
+            ValueError: If days parameter is invalid.
         """
+        # Validate days parameter
+        if not isinstance(days, int) or days < 0:
+            self.logger.warning(f"Invalid days parameter: {days}, using default of 7")
+            days = 7  # Default to 7 if invalid
+            
         conn = self.get_connection()
         cursor = conn.cursor()
+        
+        # Use parameter directly without string concatenation
+        days_str = str(days)
         cursor.execute(
-            "DELETE FROM posts WHERE created_at < datetime('now', ? || ' days')",
-            (f"-{days}",)
+            "DELETE FROM posts WHERE created_at < datetime('now', '-' || ? || ' days')",
+            (days_str,)
         )
         deleted_count = cursor.rowcount
         conn.commit()

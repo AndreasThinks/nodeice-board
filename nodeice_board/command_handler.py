@@ -33,6 +33,8 @@ class CommandHandler:
         self.db = database
         self.send_message = send_message_callback
         self.logger = logging.getLogger("NodeiceBoard")
+        self.rate_limits = {}  # Store {sender_id: last_command_time}
+        self.rate_limit_seconds = 1  # Minimum seconds between commands
 
     def handle_message(self, message: str, sender_id: str) -> bool:
         """
@@ -53,6 +55,23 @@ class CommandHandler:
                 self.logger.warning(f"Received empty message from {sender_id}")
                 return False
                 
+            # Add input length validation
+            if len(message) > 1000:  # Set appropriate max length
+                self.logger.warning(f"Message too long from {sender_id}: {len(message)} chars")
+                self.send_message("Message too long. Please keep messages under 1000 characters.", sender_id)
+                return False
+                
+            # Check rate limit
+            current_time = time.time()
+            if sender_id in self.rate_limits:
+                time_since_last = current_time - self.rate_limits[sender_id]
+                if time_since_last < self.rate_limit_seconds:
+                    self.logger.warning(f"Rate limit exceeded for {sender_id}")
+                    return False
+                    
+            # Update last command time
+            self.rate_limits[sender_id] = current_time
+                
             # Try to match different command patterns
             if CommandHandler.HELP_CMD.match(message):
                 self.logger.debug(f"Matched !help command from {sender_id}")
@@ -66,22 +85,45 @@ class CommandHandler:
                 
             match = CommandHandler.LIST_CMD.match(message)
             if match:
-                limit = int(match.group(1)) if match.group(1) else 5
-                self.logger.debug(f"Matched !list command from {sender_id} with limit {limit}")
-                return self.handle_list_command(sender_id, limit)
+                try:
+                    limit = int(match.group(1)) if match.group(1) else 5
+                    # Validate limit is reasonable
+                    if limit <= 0 or limit > 20:
+                        self.send_message("Invalid limit. Please use a number between 1 and 20.", sender_id)
+                        return False
+                    self.logger.debug(f"Matched !list command from {sender_id} with limit {limit}")
+                    return self.handle_list_command(sender_id, limit)
+                except ValueError:
+                    self.send_message("Invalid limit. Please use a number.", sender_id)
+                    return False
                 
             match = CommandHandler.VIEW_CMD.match(message)
             if match:
-                post_id = int(match.group(1))
-                self.logger.debug(f"Matched !view command from {sender_id} for post #{post_id}")
-                return self.handle_view_command(post_id, sender_id)
+                try:
+                    post_id = int(match.group(1))
+                    if post_id <= 0:
+                        self.send_message("Invalid post ID. Please use a positive number.", sender_id)
+                        return False
+                    self.logger.debug(f"Matched !view command from {sender_id} for post #{post_id}")
+                    return self.handle_view_command(post_id, sender_id)
+                except ValueError:
+                    self.send_message("Invalid post ID. Please use a number.", sender_id)
+                    return False
                 
             match = CommandHandler.COMMENT_CMD.match(message)
             if match:
-                post_id = int(match.group(1))
-                content = match.group(2).strip()
-                self.logger.debug(f"Matched !comment command from {sender_id} for post #{post_id}: {content[:20]}...")
-                return self.handle_comment_command(post_id, content, sender_id)
+                try:
+                    post_id = int(match.group(1))
+                    if post_id <= 0:
+                        self.send_message("Invalid post ID. Please use a positive number.", sender_id)
+                        return False
+                    content = match.group(2).strip()
+                    content = self.sanitize_content(content)
+                    self.logger.debug(f"Matched !comment command from {sender_id} for post #{post_id}: {content[:20]}...")
+                    return self.handle_comment_command(post_id, content, sender_id)
+                except ValueError:
+                    self.send_message("Invalid post ID. Please use a number.", sender_id)
+                    return False
             
             # If no command matched, let the user know
             self.logger.debug(f"No command matched for message from {sender_id}: {message}")
@@ -137,6 +179,25 @@ class CommandHandler:
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return False
         
+    def sanitize_content(self, content: str) -> str:
+        """
+        Sanitize user input to prevent injection attacks.
+        
+        Args:
+            content: The raw user input.
+            
+        Returns:
+            Sanitized content.
+        """
+        # Remove any potentially dangerous characters or patterns
+        content = content.strip()
+        
+        # Limit length
+        if len(content) > 1000:
+            content = content[:1000]
+            
+        return content
+        
     def handle_post_command(self, content: str, sender_id: str) -> bool:
         """
         Handle the !post command.
@@ -149,6 +210,8 @@ class CommandHandler:
             True if the post was created successfully.
         """
         try:
+            # Sanitize content before storing
+            content = self.sanitize_content(content)
             post_id = self.db.create_post(content, sender_id)
             response = f"Post #{post_id} created successfully!"
             return self.send_message(response, sender_id)

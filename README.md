@@ -94,6 +94,28 @@ This script will:
 - Create a systemd service
 - Enable the service to start at boot
 
+#### Automatic Updates
+
+Nodeice Board includes an automatic update mechanism that checks for updates on the GitHub repository every 24 hours and applies them if available.
+
+To set up automatic updates:
+
+```bash
+chmod +x install_auto_update.sh
+sudo ./install_auto_update.sh  # sudo is REQUIRED
+```
+
+**Why sudo is required:** This script needs root privileges to:
+- Set up a cron job for automatic updates
+- Create log directories
+- Restart the service after updates
+
+This script will:
+- Make the auto_update.sh script executable
+- Set up a cron job to check for updates daily at 3 AM
+- Create necessary log directories
+- Optionally run an initial update check
+
 #### Meshtastic Device Setup
 
 If you're having issues with your Meshtastic device, use the device setup script:

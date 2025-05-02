@@ -323,16 +323,79 @@ Options for `Restart` include:
 
 ### Setting Up Automatic Updates
 
-To set up automatic updates for Nodeice Board, create a cron job:
+Nodeice Board includes an automatic update mechanism that checks for updates on the GitHub repository every 24 hours and applies them if available.
+
+#### Automatic Setup (Recommended)
+
+Use the provided installation script:
 
 ```bash
-sudo crontab -e  # sudo required - editing system crontab
+chmod +x install_auto_update.sh
+sudo ./install_auto_update.sh  # sudo required
 ```
 
-Add the following line to update daily at 3 AM:
+**Why sudo is required:** This script needs root privileges to:
+- Set up a cron job for automatic updates
+- Create log directories
+- Restart the service after updates
 
+The script will:
+- Make the auto_update.sh script executable
+- Set up a cron job to check for updates daily at 3 AM
+- Create necessary log directories
+- Optionally run an initial update check
+
+#### Manual Setup
+
+If you prefer to set up the auto-update mechanism manually:
+
+1. Make the auto-update script executable:
+   ```bash
+   chmod +x auto_update.sh
+   ```
+
+2. Create a cron job to run the script daily:
+   ```bash
+   sudo crontab -e  # sudo required - editing system crontab
+   ```
+
+   Add the following line to check for updates daily at 3 AM:
+   ```
+   0 3 * * * /path/to/nodeice-board/auto_update.sh >> /var/log/nodeice-board/auto_update.log 2>&1
+   ```
+
+#### How It Works
+
+The auto-update mechanism:
+1. Checks for updates on the GitHub repository
+2. Compares the local version with the remote version
+3. If updates are available:
+   - Creates a backup of important files
+   - Pulls the latest changes
+   - Updates dependencies
+   - Restarts the service
+4. Logs all actions to `/var/log/nodeice-board/auto_update.log`
+
+#### Manual Update Check
+
+To manually check for and apply updates:
+
+```bash
+sudo ./auto_update.sh  # sudo required for service restart
 ```
-0 3 * * * cd /path/to/nodeice-board && git pull && /path/to/nodeice-board/venv/bin/pip install -e . && systemctl restart nodeice-board.service
+
+#### Viewing Update Logs
+
+To view the auto-update logs:
+
+```bash
+cat /var/log/nodeice-board/auto_update.log
+```
+
+Or to follow the logs in real-time during an update:
+
+```bash
+tail -f /var/log/nodeice-board/auto_update.log
 ```
 
 ### Monitoring with Healthchecks

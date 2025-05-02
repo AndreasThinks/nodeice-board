@@ -9,6 +9,8 @@ This document provides an overview of the files created to help set up Nodeice B
 | `install_service.sh` | Main installation script that sets up Nodeice Board as a systemd service |
 | `setup_meshtastic_device.sh` | Helper script for detecting and configuring Meshtastic devices |
 | `check_nodeice_status.sh` | Status check script that provides monitoring information |
+| `auto_update.sh` | Script that checks for and applies updates from GitHub |
+| `install_auto_update.sh` | Script that sets up the auto-update mechanism |
 | `raspberry_pi_setup.md` | Comprehensive documentation for Raspberry Pi setup |
 
 ## Installation Script (`install_service.sh`)
@@ -74,7 +76,7 @@ This comprehensive guide provides detailed instructions for setting up Nodeice B
 - Monitoring and Maintenance
 - Troubleshooting
 - Updating
-- Advanced Configuration
+- Advanced Configuration (including Automatic Updates)
 
 ## Systemd Service File
 
@@ -86,12 +88,45 @@ The installation script creates a systemd service file at `/etc/systemd/system/n
 - Environment variable configuration
 - Standard logging to the journal
 
+## Auto-Update Script (`auto_update.sh`)
+
+This script checks for updates on the GitHub repository and automatically applies them if available.
+
+**Key Features:**
+- Checks for updates by comparing local and remote Git commit hashes
+- Creates backups of important files before updating
+- Pulls the latest changes from GitHub
+- Updates dependencies in the virtual environment
+- Restarts the service after updating
+- Provides detailed logging of all actions
+
+**Usage:**
+```bash
+sudo ./auto_update.sh  # sudo required for service restart
+```
+
+## Auto-Update Installation Script (`install_auto_update.sh`)
+
+This script sets up the auto-update mechanism to run automatically every 24 hours.
+
+**Key Features:**
+- Makes the auto_update.sh script executable
+- Sets up a cron job to run the script daily at 3 AM
+- Creates necessary log directories
+- Optionally runs an initial update check
+
+**Usage:**
+```bash
+chmod +x install_auto_update.sh
+sudo ./install_auto_update.sh  # sudo required
+```
+
 ## Getting Started
 
 1. Transfer all files to your Raspberry Pi
 2. Make the scripts executable:
    ```bash
-   chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh
+   chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh auto_update.sh install_auto_update.sh
    ```
 3. Run the installation script (sudo REQUIRED):
    ```bash
@@ -110,6 +145,12 @@ The installation script creates a systemd service file at `/etc/systemd/system/n
    sudo ./check_nodeice_status.sh
    ```
    **Sudo requirements:** Works best with sudo for full access to service status and logs. Can run without sudo but with limited functionality.
+
+6. Set up automatic updates (optional but recommended):
+   ```bash
+   sudo ./install_auto_update.sh
+   ```
+   **Why sudo is required:** This script needs root privileges to set up a cron job, create log directories, and restart the service after updates.
 
 ## Additional Notes
 

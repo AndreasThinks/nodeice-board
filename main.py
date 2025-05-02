@@ -3,8 +3,9 @@
 Nodeice Board - A Meshtastic-based notice board application.
 
 This application allows Meshtastic users to post messages and comments
-to a central notice board node. Messages older than 7 days are automatically
-deleted.
+to a central notice board node. Users can subscribe to receive notifications
+about new posts or when specific posts receive comments. Messages older than 
+the configured expiration period (default: 7 days) are automatically deleted.
 
 Security features:
 - Input validation and sanitization to prevent SQL injection
@@ -35,7 +36,7 @@ from nodeice_board.database import Database
 from nodeice_board.meshtastic_interface import MeshtasticInterface
 from nodeice_board.command_handler import CommandHandler
 from nodeice_board.post_expiration import PostExpirationHandler
-from nodeice_board.config import load_config, get_device_names
+from nodeice_board.config import load_config, get_device_names, get_expiration_days
 
 
 # Set up logging
@@ -150,9 +151,10 @@ class NodeiceBoard:
             
             # Initialize post expiration handler
             logger.info("Initializing post expiration handler")
+            expiration_days = get_expiration_days(self.config)
             self.expiration_handler = PostExpirationHandler(
                 database=self.db,
-                expiration_days=7,  # Posts expire after 7 days
+                expiration_days=expiration_days,  # Posts expire after configured number of days
                 check_interval_hours=6  # Check for expired posts every 6 hours
             )
             

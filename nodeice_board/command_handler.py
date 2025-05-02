@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 from nodeice_board.database import Database
-from nodeice_board.config import load_config, get_info_url
+from nodeice_board.config import load_config, get_info_url, get_expiration_days
 
 
 class CommandHandler:
@@ -42,9 +42,10 @@ class CommandHandler:
         self.rate_limits = {}  # Store {sender_id: last_command_time}
         self.rate_limit_seconds = 1  # Minimum seconds between commands
         
-        # Load config to get info URL
+        # Load config to get info URL and expiration days
         self.config = load_config()
         self.info_url = get_info_url(self.config)
+        self.expiration_days = get_expiration_days(self.config)
 
     def handle_message(self, message: str, sender_id: str) -> bool:
         """
@@ -214,9 +215,17 @@ class CommandHandler:
             self.logger.info(f"handle_help_command called for sender {sender_id}")
             
             # Send introduction message first
+            deletion_period = "once a week" if self.expiration_days == 7 else f"after {self.expiration_days} days"
+            
+            # Calculate days until next deletion
+            # This is a simple approximation - in a real system you might want to get the actual scheduled time
+            # from the PostExpirationHandler
+            days_until_deletion = self.expiration_days
+            
             intro_text = (
                 "This is a public notice board. You can post topics or leave comments. "
-                "Everything is deleted once a week.\n\n"
+                f"Everything is deleted {deletion_period}. "
+                f"Next deletion in {days_until_deletion} days.\n\n"
                 f"Learn more here: {self.info_url}"
             )
             self.send_message(intro_text, sender_id)
@@ -308,8 +317,9 @@ class CommandHandler:
             if not posts:
                 return self.send_message("No posts found.", sender_id)
                 
-            # Send header as a separate message
-            self.send_message("Recent posts:", sender_id)
+            # Send header as a separate message with deletion info
+            days_until_deletion = self.expiration_days  # Simple approximation
+            self.send_message(f"Recent posts (next deletion in {days_until_deletion} days):", sender_id)
             time.sleep(0.5)  # Small delay between messages
             
             # Send each post as a separate line/message

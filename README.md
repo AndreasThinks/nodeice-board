@@ -9,7 +9,8 @@ Nodeice Board turns a Meshtastic device connected to a Raspberry Pi (or any comp
 Features:
 - Post creation and listing
 - Commenting on posts
-- Automatic post expiration (deletion after 7 days)
+- Subscription system for notifications about new posts and comments
+- Configurable automatic post expiration (default: 7 days)
 - Simple command-based interaction
 
 ## Requirements
@@ -56,11 +57,16 @@ Once the Nodeice Board server is running, other Meshtastic nodes can interact wi
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `!help` | Show available commands | `!help` |
+| `!help` | Show available commands and board information | `!help` |
 | `!post <message>` | Create a new post | `!post Lost cat in sector 7` |
 | `!list [n]` | Show n recent posts (default: 5) | `!list` or `!list 10` |
 | `!view <post_id>` | View a specific post and its comments | `!view 42` |
 | `!comment <post_id> <message>` | Add a comment to a post | `!comment 42 I saw that cat yesterday` |
+| `!subscribe all` | Subscribe to notifications for all new posts | `!subscribe all` |
+| `!subscribe <post_id>` | Subscribe to notifications for a specific post | `!subscribe 42` |
+| `!unsubscribe all` | Unsubscribe from all notifications | `!unsubscribe all` |
+| `!unsubscribe <post_id>` | Unsubscribe from notifications for a specific post | `!unsubscribe 42` |
+| `!subscriptions` | List your current subscriptions | `!subscriptions` |
 
 ### Setup as a Service on Raspberry Pi
 
@@ -100,14 +106,27 @@ To run Nodeice Board as a service on your Raspberry Pi:
    sudo systemctl status nodeice-board
    ```
 
+## Configuration
+
+The application can be configured using the `config.yaml` file:
+
+```yaml
+Nodeice_board:
+  Long_Name: "Nodeice Board📌Msg me !help"  # Long name for the Meshtastic device
+  Short_Name: "NDB"                         # Short name for the Meshtastic device
+  Info_URL: "https://github.com/AndreasThinks/nodeice-board"  # URL for more information
+  Expiration_Days: 7                        # Number of days after which posts are deleted
+```
+
 ## Architecture
 
 The application consists of several components:
 
-- **Database**: SQLite database for storing posts and comments
+- **Database**: SQLite database for storing posts, comments, and subscriptions
 - **Meshtastic Interface**: Handles communication with the Meshtastic device
 - **Command Handler**: Processes incoming messages and executes commands
 - **Post Expiration Handler**: Automatically removes posts older than 7 days
+- **Config**: Handles loading and accessing configuration settings
 
 ## Development
 

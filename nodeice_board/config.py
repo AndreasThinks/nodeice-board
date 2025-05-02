@@ -93,3 +93,30 @@ def get_info_url(config: Dict[str, Any]) -> str:
         logger.error(f"Error getting info URL from config: {e}")
         
     return default_url
+
+def get_expiration_days(config: Dict[str, Any]) -> int:
+    """
+    Get the post expiration days from the configuration.
+    
+    Args:
+        config: The configuration dictionary.
+        
+    Returns:
+        The number of days after which posts expire, or the default value (7) if not found.
+    """
+    default_days = 7
+    
+    try:
+        if 'Nodeice_board' in config:
+            nodeice_config = config['Nodeice_board']
+            
+            if isinstance(nodeice_config, dict) and 'Expiration_Days' in nodeice_config:
+                expiration_days = nodeice_config['Expiration_Days']
+                if isinstance(expiration_days, int) and expiration_days > 0:
+                    return expiration_days
+                else:
+                    logger.warning(f"Invalid Expiration_Days value: {expiration_days}, using default of {default_days}")
+    except Exception as e:
+        logger.error(f"Error getting expiration days from config: {e}")
+        
+    return default_days

@@ -70,7 +70,57 @@ Once the Nodeice Board server is running, other Meshtastic nodes can interact wi
 
 ### Setup as a Service on Raspberry Pi
 
-To run Nodeice Board as a service on your Raspberry Pi:
+For detailed instructions on setting up Nodeice Board to run automatically at boot on a Raspberry Pi, see the [Raspberry Pi Setup Guide](raspberry_pi_setup.md).
+
+#### Quick Setup
+
+Use the provided installation script:
+
+```bash
+chmod +x install_service.sh
+sudo ./install_service.sh
+```
+
+This script will:
+- Check prerequisites
+- Install dependencies
+- Create a systemd service
+- Enable the service to start at boot
+
+#### Meshtastic Device Setup
+
+If you're having issues with your Meshtastic device, use the device setup script:
+
+```bash
+chmod +x setup_meshtastic_device.sh
+sudo ./setup_meshtastic_device.sh
+```
+
+This script helps with:
+- Detecting Meshtastic devices
+- Setting up udev rules
+- Adding your user to the dialout group
+- Testing device connection
+
+#### Monitoring and Status Check
+
+To check the status of your Nodeice Board service and get basic monitoring information:
+
+```bash
+chmod +x check_nodeice_status.sh
+./check_nodeice_status.sh
+```
+
+This script provides information about:
+- Service status and uptime
+- Meshtastic device detection
+- Log file status and recent entries
+- Database statistics
+- System information (memory, disk usage, CPU temperature)
+
+#### Manual Setup
+
+For manual setup instructions, see the [Raspberry Pi Setup Guide](raspberry_pi_setup.md) or follow these basic steps:
 
 1. Create a service file:
    ```bash

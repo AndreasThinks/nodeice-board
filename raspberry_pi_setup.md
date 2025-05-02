@@ -1,0 +1,367 @@
+# Running Nodeice Board on Raspberry Pi
+
+This guide provides detailed instructions for setting up Nodeice Board to run automatically at boot on a Raspberry Pi.
+
+## Table of Contents
+
+1. [Automatic Installation](#automatic-installation)
+2. [Manual Installation](#manual-installation)
+3. [Configuration Options](#configuration-options)
+4. [Monitoring and Maintenance](#monitoring-and-maintenance)
+5. [Troubleshooting](#troubleshooting)
+6. [Updating](#updating)
+7. [Advanced Configuration](#advanced-configuration)
+
+## Automatic Installation
+
+For a quick and easy setup, use the provided installation script:
+
+1. Make all scripts executable:
+   ```bash
+   chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh
+   ```
+
+2. Run the installation script with sudo:
+   ```bash
+   sudo ./install_service.sh
+   ```
+
+3. Follow the prompts to complete the installation.
+
+The script will:
+- Check prerequisites (Python version, Meshtastic device)
+- Install required dependencies
+- Set up a Python virtual environment
+- Install Nodeice Board and its dependencies
+- Create and configure a systemd service
+- Enable the service to start at boot
+- Optionally start the service immediately
+
+## Manual Installation
+
+If you prefer to set up the service manually, follow these steps:
+
+### 1. Install Dependencies
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-pip python3-venv
+```
+
+### 2. Set Up the Project
+
+Clone the repository (if you haven't already):
+```bash
+git clone https://github.com/yourusername/nodeice-board.git
+cd nodeice-board
+```
+
+Create a virtual environment:
+```bash
+python3 -m venv venv
+```
+
+Activate the virtual environment and install dependencies:
+```bash
+source venv/bin/activate
+pip install -e .
+```
+
+### 3. Create a Systemd Service File
+
+Create a new service file:
+```bash
+sudo nano /etc/systemd/system/nodeice-board.service
+```
+
+Add the following content (adjust paths as needed):
+```
+[Unit]
+Description=Nodeice Board Meshtastic Notice Board
+Documentation=https://github.com/AndreasThinks/nodeice-board
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi  # Change to your username
+WorkingDirectory=/home/pi/nodeice-board  # Change to your project path
+ExecStart=/home/pi/nodeice-board/venv/bin/python /home/pi/nodeice-board/main.py
+Environment="PYTHONUNBUFFERED=1"
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 4. Enable and Start the Service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable nodeice-board.service
+sudo systemctl start nodeice-board.service
+```
+
+### 5. Verify the Service is Running
+
+```bash
+sudo systemctl status nodeice-board.service
+```
+
+## Configuration Options
+
+### Command Line Arguments
+
+When running Nodeice Board, you can specify several command-line arguments:
+
+- `--device_path`: Path to the Meshtastic device (optional, auto-detects if not provided)
+- `--db_path`: Path to the database file (default: nodeice_board.db)
+- `--config_path`: Path to the configuration file (default: config.yaml)
+
+To use these with the systemd service, modify the `ExecStart` line in the service file:
+
+```
+ExecStart=/home/pi/nodeice-board/venv/bin/python /home/pi/nodeice-board/main.py --device_path=/dev/ttyUSB0 --db_path=/path/to/database.db --config_path=/path/to/config.yaml
+```
+
+### Configuration File
+
+The `config.yaml` file allows you to customize various aspects of Nodeice Board:
+
+```yaml
+Nodeice_board:
+  Long_Name: "Nodeice Board📌Msg me !help"  # Long name for the Meshtastic device
+  Short_Name: "NDB"                         # Short name for the Meshtastic device
+  Info_URL: "https://github.com/AndreasThinks/nodeice-board"  # URL for more information
+  Expiration_Days: 7                        # Number of days after which posts are deleted
+```
+
+## Monitoring and Maintenance
+
+### Checking Service Status
+
+```bash
+sudo systemctl status nodeice-board.service
+```
+
+### Viewing Logs
+
+View all logs:
+```bash
+sudo journalctl -u nodeice-board.service
+```
+
+Follow logs in real-time:
+```bash
+sudo journalctl -u nodeice-board.service -f
+```
+
+View logs since the last boot:
+```bash
+sudo journalctl -u nodeice-board.service -b
+```
+
+### Common Service Commands
+
+- Start the service: `sudo systemctl start nodeice-board.service`
+- Stop the service: `sudo systemctl stop nodeice-board.service`
+- Restart the service: `sudo systemctl restart nodeice-board.service`
+- Disable auto-start at boot: `sudo systemctl disable nodeice-board.service`
+- Re-enable auto-start at boot: `sudo systemctl enable nodeice-board.service`
+
+### Setting Up Log Rotation
+
+To prevent logs from filling up your disk space, set up log rotation:
+
+```bash
+sudo nano /etc/logrotate.d/nodeice-board
+```
+
+Add the following content:
+
+```
+/var/log/nodeice-board/nodeice_board.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0640 pi pi
+}
+```
+
+## Troubleshooting
+
+### Service Fails to Start
+
+1. Check the logs:
+   ```bash
+   sudo journalctl -u nodeice-board.service -n 50
+   ```
+
+2. Verify the Meshtastic device is connected:
+   ```bash
+   ls -l /dev/ttyUSB*
+   ```
+   or
+   ```bash
+   ls -l /dev/ttyACM*
+   ```
+
+3. Check Python version:
+   ```bash
+   python3 --version
+   ```
+   Ensure it's 3.9 or higher.
+
+4. Test running the application manually:
+   ```bash
+   cd /path/to/nodeice-board
+   source venv/bin/activate
+   python main.py
+   ```
+
+### USB Device Permission Issues
+
+If the service can't access the USB device:
+
+1. Add your user to the `dialout` group:
+   ```bash
+   sudo usermod -a -G dialout $USER
+   ```
+   (Log out and back in for this to take effect)
+
+2. Create a udev rule for the Meshtastic device:
+   ```bash
+   sudo nano /etc/udev/rules.d/99-meshtastic.rules
+   ```
+   
+   Add:
+   ```
+   SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE="0666", SYMLINK+="meshtastic"
+   ```
+   (Adjust vendor and product IDs as needed for your specific device)
+
+3. Reload udev rules:
+   ```bash
+   sudo udevadm control --reload-rules
+   sudo udevadm trigger
+   ```
+
+## Updating
+
+To update Nodeice Board:
+
+1. Stop the service:
+   ```bash
+   sudo systemctl stop nodeice-board.service
+   ```
+
+2. Pull the latest changes:
+   ```bash
+   cd /path/to/nodeice-board
+   git pull
+   ```
+
+3. Update dependencies:
+   ```bash
+   source venv/bin/activate
+   pip install -e .
+   ```
+
+4. Restart the service:
+   ```bash
+   sudo systemctl start nodeice-board.service
+   ```
+
+## Advanced Configuration
+
+### Running on a Different Port
+
+If you need to modify how the application connects to the Meshtastic device, you can specify the device path in the service file:
+
+```
+ExecStart=/home/pi/nodeice-board/venv/bin/python /home/pi/nodeice-board/main.py --device_path=/dev/ttyUSB0
+```
+
+### Auto-Restart on Failure
+
+The service is configured to restart automatically on failure. You can adjust the restart behavior by modifying these lines in the service file:
+
+```
+Restart=on-failure
+RestartSec=30
+```
+
+Options for `Restart` include:
+- `no`: Don't restart (default)
+- `on-success`: Restart only when the service exits successfully
+- `on-failure`: Restart when the service exits with a non-zero exit code
+- `on-abnormal`: Restart when the service is terminated by a signal
+- `on-abort`: Restart when the service is aborted
+- `on-watchdog`: Restart when the watchdog timeout expires
+- `always`: Always restart regardless of exit code
+
+### Setting Up Automatic Updates
+
+To set up automatic updates for Nodeice Board, create a cron job:
+
+```bash
+sudo crontab -e
+```
+
+Add the following line to update daily at 3 AM:
+
+```
+0 3 * * * cd /path/to/nodeice-board && git pull && /path/to/nodeice-board/venv/bin/pip install -e . && systemctl restart nodeice-board.service
+```
+
+### Monitoring with Healthchecks
+
+To monitor the health of your Nodeice Board service, you can set up a simple healthcheck script:
+
+1. Create a healthcheck script:
+   ```bash
+   nano /home/pi/nodeice-board/healthcheck.sh
+   ```
+
+2. Add the following content:
+   ```bash
+   #!/bin/bash
+   
+   if systemctl is-active --quiet nodeice-board.service; then
+     curl -fsS -m 10 --retry 5 https://hc-ping.com/YOUR-UUID-HERE > /dev/null
+   else
+     curl -fsS -m 10 --retry 5 https://hc-ping.com/YOUR-UUID-HERE/fail > /dev/null
+   fi
+   ```
+
+3. Make it executable:
+   ```bash
+   chmod +x /home/pi/nodeice-board/healthcheck.sh
+   ```
+
+4. Add it to crontab to run every 15 minutes:
+   ```bash
+   (crontab -l 2>/dev/null; echo "*/15 * * * * /home/pi/nodeice-board/healthcheck.sh") | crontab -
+   ```
+
+### Running Multiple Instances
+
+If you need to run multiple instances of Nodeice Board (for different Meshtastic devices), create separate service files with different names and configurations:
+
+```bash
+sudo cp /etc/systemd/system/nodeice-board.service /etc/systemd/system/nodeice-board-2.service
+```
+
+Then edit the new service file to use different paths and parameters.

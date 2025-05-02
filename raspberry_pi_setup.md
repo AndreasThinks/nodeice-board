@@ -21,10 +21,17 @@ For a quick and easy setup, use the provided installation script:
    chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh
    ```
 
-2. Run the installation script with sudo:
+2. Run the installation script with sudo (REQUIRED):
    ```bash
    sudo ./install_service.sh
    ```
+   
+   **Why sudo is required:** This script needs root privileges to:
+   - Install system packages with apt-get
+   - Create a systemd service file in /etc/systemd/system/
+   - Create a log directory in /var/log/
+   - Reload systemd daemon
+   - Enable and start the systemd service
 
 3. Follow the prompts to complete the installation.
 
@@ -44,8 +51,8 @@ If you prefer to set up the service manually, follow these steps:
 ### 1. Install Dependencies
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-venv
+sudo apt-get update                           # sudo required - system package management
+sudo apt-get install -y python3-pip python3-venv  # sudo required - system package management
 ```
 
 ### 2. Set Up the Project
@@ -71,7 +78,7 @@ pip install -e .
 
 Create a new service file:
 ```bash
-sudo nano /etc/systemd/system/nodeice-board.service
+sudo nano /etc/systemd/system/nodeice-board.service  # sudo required - writing to system directory
 ```
 
 Add the following content (adjust paths as needed):
@@ -106,15 +113,15 @@ WantedBy=multi-user.target
 ### 4. Enable and Start the Service
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable nodeice-board.service
-sudo systemctl start nodeice-board.service
+sudo systemctl daemon-reload      # sudo required - managing systemd
+sudo systemctl enable nodeice-board.service   # sudo required - managing systemd
+sudo systemctl start nodeice-board.service    # sudo required - managing systemd
 ```
 
 ### 5. Verify the Service is Running
 
 ```bash
-sudo systemctl status nodeice-board.service
+sudo systemctl status nodeice-board.service   # sudo required - accessing systemd service status
 ```
 
 ## Configuration Options
@@ -150,24 +157,26 @@ Nodeice_board:
 ### Checking Service Status
 
 ```bash
-sudo systemctl status nodeice-board.service
+sudo systemctl status nodeice-board.service  # sudo required
 ```
+
+**Note:** All systemctl commands require sudo privileges because they interact with system services.
 
 ### Viewing Logs
 
 View all logs:
 ```bash
-sudo journalctl -u nodeice-board.service
+sudo journalctl -u nodeice-board.service  # sudo required
 ```
 
 Follow logs in real-time:
 ```bash
-sudo journalctl -u nodeice-board.service -f
+sudo journalctl -u nodeice-board.service -f  # sudo required
 ```
 
 View logs since the last boot:
 ```bash
-sudo journalctl -u nodeice-board.service -b
+sudo journalctl -u nodeice-board.service -b  # sudo required
 ```
 
 ### Common Service Commands
@@ -206,21 +215,21 @@ Add the following content:
 
 1. Check the logs:
    ```bash
-   sudo journalctl -u nodeice-board.service -n 50
+   sudo journalctl -u nodeice-board.service -n 50  # sudo required - accessing system logs
    ```
 
 2. Verify the Meshtastic device is connected:
    ```bash
-   ls -l /dev/ttyUSB*
+   ls -l /dev/ttyUSB*  # no sudo needed for listing devices
    ```
    or
    ```bash
-   ls -l /dev/ttyACM*
+   ls -l /dev/ttyACM*  # no sudo needed for listing devices
    ```
 
 3. Check Python version:
    ```bash
-   python3 --version
+   python3 --version  # no sudo needed
    ```
    Ensure it's 3.9 or higher.
 
@@ -228,7 +237,7 @@ Add the following content:
    ```bash
    cd /path/to/nodeice-board
    source venv/bin/activate
-   python main.py
+   python main.py  # no sudo needed for testing
    ```
 
 ### USB Device Permission Issues
@@ -237,13 +246,13 @@ If the service can't access the USB device:
 
 1. Add your user to the `dialout` group:
    ```bash
-   sudo usermod -a -G dialout $USER
+   sudo usermod -a -G dialout $USER  # sudo required - modifying system groups
    ```
    (Log out and back in for this to take effect)
 
 2. Create a udev rule for the Meshtastic device:
    ```bash
-   sudo nano /etc/udev/rules.d/99-meshtastic.rules
+   sudo nano /etc/udev/rules.d/99-meshtastic.rules  # sudo required - writing to system directory
    ```
    
    Add:
@@ -254,8 +263,8 @@ If the service can't access the USB device:
 
 3. Reload udev rules:
    ```bash
-   sudo udevadm control --reload-rules
-   sudo udevadm trigger
+   sudo udevadm control --reload-rules  # sudo required - managing system services
+   sudo udevadm trigger  # sudo required - managing system services
    ```
 
 ## Updating
@@ -264,24 +273,24 @@ To update Nodeice Board:
 
 1. Stop the service:
    ```bash
-   sudo systemctl stop nodeice-board.service
+   sudo systemctl stop nodeice-board.service  # sudo required - managing systemd
    ```
 
 2. Pull the latest changes:
    ```bash
    cd /path/to/nodeice-board
-   git pull
+   git pull  # no sudo needed for git operations
    ```
 
 3. Update dependencies:
    ```bash
    source venv/bin/activate
-   pip install -e .
+   pip install -e .  # no sudo needed when using virtualenv
    ```
 
 4. Restart the service:
    ```bash
-   sudo systemctl start nodeice-board.service
+   sudo systemctl start nodeice-board.service  # sudo required - managing systemd
    ```
 
 ## Advanced Configuration
@@ -317,7 +326,7 @@ Options for `Restart` include:
 To set up automatic updates for Nodeice Board, create a cron job:
 
 ```bash
-sudo crontab -e
+sudo crontab -e  # sudo required - editing system crontab
 ```
 
 Add the following line to update daily at 3 AM:
@@ -332,7 +341,7 @@ To monitor the health of your Nodeice Board service, you can set up a simple hea
 
 1. Create a healthcheck script:
    ```bash
-   nano /home/pi/nodeice-board/healthcheck.sh
+   nano /home/pi/nodeice-board/healthcheck.sh  # no sudo needed if in your home directory
    ```
 
 2. Add the following content:
@@ -348,12 +357,12 @@ To monitor the health of your Nodeice Board service, you can set up a simple hea
 
 3. Make it executable:
    ```bash
-   chmod +x /home/pi/nodeice-board/healthcheck.sh
+   chmod +x /home/pi/nodeice-board/healthcheck.sh  # no sudo needed if you own the file
    ```
 
 4. Add it to crontab to run every 15 minutes:
    ```bash
-   (crontab -l 2>/dev/null; echo "*/15 * * * * /home/pi/nodeice-board/healthcheck.sh") | crontab -
+   (crontab -l 2>/dev/null; echo "*/15 * * * * /home/pi/nodeice-board/healthcheck.sh") | crontab -  # no sudo needed for user crontab
    ```
 
 ### Running Multiple Instances
@@ -361,7 +370,10 @@ To monitor the health of your Nodeice Board service, you can set up a simple hea
 If you need to run multiple instances of Nodeice Board (for different Meshtastic devices), create separate service files with different names and configurations:
 
 ```bash
-sudo cp /etc/systemd/system/nodeice-board.service /etc/systemd/system/nodeice-board-2.service
+sudo cp /etc/systemd/system/nodeice-board.service /etc/systemd/system/nodeice-board-2.service  # sudo required - writing to system directory
 ```
 
-Then edit the new service file to use different paths and parameters.
+Then edit the new service file to use different paths and parameters:
+```bash
+sudo nano /etc/systemd/system/nodeice-board-2.service  # sudo required - editing system file
+```

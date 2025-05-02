@@ -26,7 +26,7 @@ This script automates the process of setting up Nodeice Board as a systemd servi
 **Usage:**
 ```bash
 chmod +x install_service.sh
-sudo ./install_service.sh
+sudo ./install_service.sh  # sudo REQUIRED
 ```
 
 ## Meshtastic Device Setup Script (`setup_meshtastic_device.sh`)
@@ -42,7 +42,7 @@ This script helps detect and configure Meshtastic devices for use with Nodeice B
 **Usage:**
 ```bash
 chmod +x setup_meshtastic_device.sh
-sudo ./setup_meshtastic_device.sh
+sudo ./setup_meshtastic_device.sh  # sudo recommended for full functionality
 ```
 
 ## Status Check Script (`check_nodeice_status.sh`)
@@ -60,7 +60,7 @@ This script checks the status of the Nodeice Board service and provides basic mo
 **Usage:**
 ```bash
 chmod +x check_nodeice_status.sh
-./check_nodeice_status.sh
+sudo ./check_nodeice_status.sh  # sudo recommended for full access
 ```
 
 ## Documentation (`raspberry_pi_setup.md`)
@@ -93,18 +93,23 @@ The installation script creates a systemd service file at `/etc/systemd/system/n
    ```bash
    chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh
    ```
-3. Run the installation script:
+3. Run the installation script (sudo REQUIRED):
    ```bash
    sudo ./install_service.sh
    ```
-4. If you have issues with the Meshtastic device:
+   **Why sudo is required:** This script needs root privileges to install system packages, create systemd service files, create log directories, and manage systemd services.
+
+4. If you have issues with the Meshtastic device (sudo recommended for full functionality):
    ```bash
    sudo ./setup_meshtastic_device.sh
    ```
-5. Check the status:
+   **Sudo requirements:** Full functionality requires sudo. Some options (device detection, connection testing) will work without sudo, but critical functions (udev rules, adding user to dialout group) require sudo.
+
+5. Check the status (sudo recommended for full access):
    ```bash
-   ./check_nodeice_status.sh
+   sudo ./check_nodeice_status.sh
    ```
+   **Sudo requirements:** Works best with sudo for full access to service status and logs. Can run without sudo but with limited functionality.
 
 ## Additional Notes
 

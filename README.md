@@ -78,8 +78,15 @@ Use the provided installation script:
 
 ```bash
 chmod +x install_service.sh
-sudo ./install_service.sh
+sudo ./install_service.sh  # sudo is REQUIRED
 ```
+
+**Why sudo is required:** This script needs root privileges to:
+- Install system packages with apt-get
+- Create a systemd service file in /etc/systemd/system/
+- Create a log directory in /var/log/
+- Reload systemd daemon
+- Enable and start the systemd service
 
 This script will:
 - Check prerequisites
@@ -93,13 +100,18 @@ If you're having issues with your Meshtastic device, use the device setup script
 
 ```bash
 chmod +x setup_meshtastic_device.sh
-sudo ./setup_meshtastic_device.sh
+sudo ./setup_meshtastic_device.sh  # sudo recommended for full functionality
 ```
+
+**Sudo requirements:**
+- Full functionality requires sudo
+- Some options (device detection, connection testing) will work without sudo
+- Critical functions (udev rules, adding user to dialout group) require sudo
 
 This script helps with:
 - Detecting Meshtastic devices
-- Setting up udev rules
-- Adding your user to the dialout group
+- Setting up udev rules (requires sudo)
+- Adding your user to the dialout group (requires sudo)
 - Testing device connection
 
 #### Monitoring and Status Check
@@ -108,8 +120,13 @@ To check the status of your Nodeice Board service and get basic monitoring infor
 
 ```bash
 chmod +x check_nodeice_status.sh
-./check_nodeice_status.sh
+sudo ./check_nodeice_status.sh  # sudo recommended for full access
 ```
+
+**Sudo requirements:**
+- Works best with sudo for full access to service status and logs
+- Can run without sudo but with limited functionality
+- Some systemctl commands require sudo privileges
 
 This script provides information about:
 - Service status and uptime

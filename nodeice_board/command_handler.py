@@ -178,12 +178,8 @@ class CommandHandler:
                 self.logger.debug(f"Matched !subscriptions command from {sender_id}")
                 return self.handle_list_subscriptions_command(sender_id)
             
-            # If no command matched, let the user know
+            # If no command matched, just log it but don't respond
             self.logger.debug(f"No command matched for message from {sender_id}: {message}")
-            self.send_message(
-                "Unknown command. Send !help for available commands.",
-                sender_id
-            )
             return False
         except Exception as e:
             self.logger.error(f"Error handling message: {e}")

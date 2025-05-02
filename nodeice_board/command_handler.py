@@ -1,6 +1,7 @@
 import re
 import time
 import logging
+import traceback
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
@@ -44,37 +45,66 @@ class CommandHandler:
         Returns:
             True if message was handled as a command, False otherwise.
         """
-        # Try to match different command patterns
-        if CommandHandler.HELP_CMD.match(message):
-            return self.handle_help_command(sender_id)
+        try:
+            self.logger.debug(f"CommandHandler.handle_message called with: '{message}' from {sender_id}")
             
-        match = CommandHandler.POST_CMD.match(message)
-        if match:
-            content = match.group(1).strip()
-            return self.handle_post_command(content, sender_id)
+            # Validate input
+            if not message or not message.strip():
+                self.logger.warning(f"Received empty message from {sender_id}")
+                return False
+                
+            # Try to match different command patterns
+            if CommandHandler.HELP_CMD.match(message):
+                self.logger.debug(f"Matched !help command from {sender_id}")
+                return self.handle_help_command(sender_id)
+                
+            match = CommandHandler.POST_CMD.match(message)
+            if match:
+                content = match.group(1).strip()
+                self.logger.debug(f"Matched !post command from {sender_id}: {content[:20]}...")
+                return self.handle_post_command(content, sender_id)
+                
+            match = CommandHandler.LIST_CMD.match(message)
+            if match:
+                limit = int(match.group(1)) if match.group(1) else 5
+                self.logger.debug(f"Matched !list command from {sender_id} with limit {limit}")
+                return self.handle_list_command(sender_id, limit)
+                
+            match = CommandHandler.VIEW_CMD.match(message)
+            if match:
+                post_id = int(match.group(1))
+                self.logger.debug(f"Matched !view command from {sender_id} for post #{post_id}")
+                return self.handle_view_command(post_id, sender_id)
+                
+            match = CommandHandler.COMMENT_CMD.match(message)
+            if match:
+                post_id = int(match.group(1))
+                content = match.group(2).strip()
+                self.logger.debug(f"Matched !comment command from {sender_id} for post #{post_id}: {content[:20]}...")
+                return self.handle_comment_command(post_id, content, sender_id)
             
-        match = CommandHandler.LIST_CMD.match(message)
-        if match:
-            limit = int(match.group(1)) if match.group(1) else 5
-            return self.handle_list_command(sender_id, limit)
+            # If no command matched, let the user know
+            self.logger.debug(f"No command matched for message from {sender_id}: {message}")
+            self.send_message(
+                "Unknown command. Send !help for available commands.",
+                sender_id
+            )
+            return False
+        except Exception as e:
+            self.logger.error(f"Error handling message: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Message: '{message}', Sender: {sender_id}")
             
-        match = CommandHandler.VIEW_CMD.match(message)
-        if match:
-            post_id = int(match.group(1))
-            return self.handle_view_command(post_id, sender_id)
-            
-        match = CommandHandler.COMMENT_CMD.match(message)
-        if match:
-            post_id = int(match.group(1))
-            content = match.group(2).strip()
-            return self.handle_comment_command(post_id, content, sender_id)
-        
-        # If no command matched, let the user know
-        self.send_message(
-            "Unknown command. Send !help for available commands.",
-            sender_id
-        )
-        return False
+            # Try to notify the user
+            try:
+                self.send_message(
+                    "An error occurred while processing your command. Please try again later.",
+                    sender_id
+                )
+            except Exception as send_error:
+                self.logger.error(f"Failed to send error message: {send_error}")
+                
+            return False
         
     def handle_help_command(self, sender_id: str) -> bool:
         """
@@ -86,16 +116,26 @@ class CommandHandler:
         Returns:
             True if message was sent successfully.
         """
-        help_text = (
-            "Nodeice Board Commands:\n"
-            "!post <message> - Create a new post\n"
-            "!list [n] - Show n recent posts (default: 5)\n"
-            "!view <post_id> - View a post and its comments\n"
-            "!comment <post_id> <message> - Comment on a post\n"
-            "!help - Show this help message"
-        )
-        
-        return self.send_message(help_text, sender_id)
+        try:
+            self.logger.info(f"handle_help_command called for sender {sender_id}")
+            
+            # Format help text with one command per line for better chunking
+            help_text = (
+                "Nodeice Board Commands:\n"
+                "!post <message> - Create a new post\n"
+                "!list [n] - Show n recent posts (default: 5)\n"
+                "!view <post_id> - View a post and its comments\n"
+                "!comment <post_id> <message> - Comment on a post\n"
+                "!help - Show this help message"
+            )
+            
+            result = self.send_message(help_text, sender_id)
+            self.logger.debug(f"Help message sent to {sender_id}: {'Success' if result else 'Failed'}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error handling help command: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
         
     def handle_post_command(self, content: str, sender_id: str) -> bool:
         """
@@ -135,7 +175,11 @@ class CommandHandler:
             if not posts:
                 return self.send_message("No posts found.", sender_id)
                 
-            response = "Recent posts:\n"
+            # Send header as a separate message
+            self.send_message("Recent posts:", sender_id)
+            time.sleep(0.5)  # Small delay between messages
+            
+            # Send each post as a separate line/message
             for post in posts:
                 # Format the timestamp
                 timestamp = self._format_time_ago(post["created_at"])
@@ -146,9 +190,12 @@ class CommandHandler:
                     content = content[:27] + "..."
                     
                 author = post["author_name"] or post["author_id"]
-                response += f"#{post['id']}: {content} ({author}, {timestamp})\n"
+                post_line = f"#{post['id']}: {content} ({author}, {timestamp})"
                 
-            return self.send_message(response, sender_id)
+                self.send_message(post_line, sender_id)
+                time.sleep(0.5)  # Small delay between messages
+                
+            return True
         except Exception as e:
             self.logger.error(f"Error listing posts: {e}")
             error_msg = "Failed to retrieve posts. Please try again later."
@@ -172,30 +219,40 @@ class CommandHandler:
             if not post:
                 return self.send_message(f"Post #{post_id} not found.", sender_id)
                 
-            # Format the post
+            # Format the post header
             author = post["author_name"] or post["author_id"]
             timestamp = datetime.strptime(post["created_at"], "%Y-%m-%d %H:%M:%S")
             formatted_time = timestamp.strftime("%b %d, %Y, %I:%M %p")
             
-            response = (
-                f"Post #{post_id}: {post['content']}\n"
-                f"By: {author}\n"
-                f"Posted: {formatted_time}\n\n"
-            )
+            # Send post details as separate messages
+            self.send_message(f"Post #{post_id}: {post['content']}", sender_id)
+            time.sleep(0.5)
             
-            # Get and format comments
+            self.send_message(f"By: {author}", sender_id)
+            time.sleep(0.5)
+            
+            self.send_message(f"Posted: {formatted_time}", sender_id)
+            time.sleep(0.5)
+            
+            # Get comments
             comments = self.db.get_comments_for_post(post_id)
             
             if comments:
-                response += "Comments:\n"
+                self.send_message("Comments:", sender_id)
+                time.sleep(0.5)
+                
+                # Send each comment as a separate message
                 for comment in comments:
                     comment_author = comment["author_name"] or comment["author_id"]
                     comment_time = self._format_time_ago(comment["created_at"])
-                    response += f"- {comment_author} ({comment_time}): {comment['content']}\n"
+                    comment_text = f"- {comment_author} ({comment_time}): {comment['content']}"
+                    
+                    self.send_message(comment_text, sender_id)
+                    time.sleep(0.5)
             else:
-                response += "No comments yet."
+                self.send_message("No comments yet.", sender_id)
                 
-            return self.send_message(response, sender_id)
+            return True
         except Exception as e:
             self.logger.error(f"Error viewing post: {e}")
             error_msg = "Failed to retrieve post. Please try again later."

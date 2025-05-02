@@ -217,10 +217,16 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "meshtastic" },
+    { name = "pypubsub" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "meshtastic", specifier = ">=2.6.2" }]
+requires-dist = [
+    { name = "meshtastic", specifier = ">=2.6.2" },
+    { name = "pypubsub", specifier = ">=4.0.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "packaging"

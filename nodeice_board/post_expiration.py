@@ -1,6 +1,7 @@
 import time
 import logging
 import threading
+import traceback
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -17,11 +18,12 @@ class PostExpirationHandler:
         Initialize the post expiration handler.
         
         Args:
-            database: The database instance.
+            database: The database instance (used only for configuration, not directly accessed from thread).
             expiration_days: Number of days after which posts should be expired (deleted).
             check_interval_hours: How often to check for expired posts (in hours).
         """
-        self.db = database
+        # Store the database path rather than the database instance
+        self.db_path = database.db_path
         self.expiration_days = expiration_days
         self.check_interval_seconds = check_interval_hours * 60 * 60
         self.logger = logging.getLogger("NodeiceBoard")
@@ -67,9 +69,17 @@ class PostExpirationHandler:
             
     def _delete_expired_posts(self):
         """Delete posts older than the expiration threshold."""
+        # Create a new database connection in this thread
+        thread_db = None
         try:
-            deleted_count = self.db.delete_expired_posts(self.expiration_days)
+            thread_db = Database(self.db_path)
+            deleted_count = thread_db.delete_expired_posts(self.expiration_days)
             if deleted_count > 0:
                 self.logger.info(f"Deleted {deleted_count} expired posts")
         except Exception as e:
             self.logger.error(f"Error deleting expired posts: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+        finally:
+            # Close the database connection
+            if thread_db:
+                thread_db.close()

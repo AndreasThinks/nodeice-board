@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import time
+import threading
+import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
 
@@ -9,8 +11,18 @@ class Database:
     def __init__(self, db_path: str = "nodeice_board.db"):
         """Initialize the database connection."""
         self.db_path = db_path
-        self.conn = None
+        self.local = threading.local()  # Thread-local storage for connections
+        self.logger = logging.getLogger("NodeiceBoard")
         self.init_db()
+    
+    def get_connection(self):
+        """Get a thread-local database connection."""
+        if not hasattr(self.local, 'conn') or self.local.conn is None:
+            self.logger.debug(f"Creating new database connection for thread {threading.current_thread().name}")
+            self.local.conn = sqlite3.connect(self.db_path)
+            # Enable foreign keys
+            self.local.conn.execute("PRAGMA foreign_keys = ON")
+        return self.local.conn
     
     def init_db(self):
         """Initialize the database if it doesn't exist."""
@@ -18,10 +30,10 @@ class Database:
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         
         # Connect to the database
-        self.conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         
         # Create tables if they don't exist
-        cursor = self.conn.cursor()
+        cursor = conn.cursor()
         
         # Posts table
         cursor.execute('''
@@ -52,7 +64,7 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at)
         ''')
         
-        self.conn.commit()
+        conn.commit()
 
     def create_post(self, content: str, author_id: str, author_name: Optional[str] = None) -> int:
         """
@@ -66,12 +78,13 @@ class Database:
         Returns:
             The ID of the created post.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO posts (content, author_id, author_name) VALUES (?, ?, ?)",
             (content, author_id, author_name)
         )
-        self.conn.commit()
+        conn.commit()
         return cursor.lastrowid
 
     def get_post(self, post_id: int) -> Optional[Dict[str, Any]]:
@@ -84,7 +97,8 @@ class Database:
         Returns:
             The post as a dictionary, or None if not found.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
         post = cursor.fetchone()
         
@@ -109,7 +123,8 @@ class Database:
         Returns:
             A list of posts as dictionaries.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute(
             "SELECT * FROM posts ORDER BY created_at DESC LIMIT ?",
             (limit,)
@@ -140,12 +155,13 @@ class Database:
         Returns:
             The ID of the created comment.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO comments (post_id, content, author_id, author_name) VALUES (?, ?, ?, ?)",
             (post_id, content, author_id, author_name)
         )
-        self.conn.commit()
+        conn.commit()
         return cursor.lastrowid
 
     def get_comments_for_post(self, post_id: int) -> List[Dict[str, Any]]:
@@ -158,7 +174,8 @@ class Database:
         Returns:
             A list of comments as dictionaries.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute(
             "SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC",
             (post_id,)
@@ -187,20 +204,21 @@ class Database:
         Returns:
             The number of posts deleted.
         """
-        cursor = self.conn.cursor()
+        conn = self.get_connection()
+        cursor = conn.cursor()
         cursor.execute(
             "DELETE FROM posts WHERE created_at < datetime('now', ? || ' days')",
             (f"-{days}",)
         )
         deleted_count = cursor.rowcount
-        self.conn.commit()
+        conn.commit()
         return deleted_count
 
     def close(self):
         """Close the database connection."""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        if hasattr(self.local, 'conn') and self.local.conn:
+            self.local.conn.close()
+            self.local.conn = None
 
     def __enter__(self):
         """Context manager entry."""
@@ -209,3 +227,4 @@ class Database:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.close()
+        return False  # Don't suppress exceptions

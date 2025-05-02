@@ -7,11 +7,12 @@ to a central notice board node. Messages older than 7 days are automatically
 deleted.
 
 Usage:
-    python main.py [--device_path=<path>] [--db_path=<path>]
+    python main.py [--device_path=<path>] [--db_path=<path>] [--config_path=<path>]
 
 Options:
     --device_path=<path>   Path to the Meshtastic device (optional, auto-detects if not provided)
     --db_path=<path>       Path to the database file (default: nodeice_board.db)
+    --config_path=<path>   Path to the configuration file (default: config.yaml)
 """
 
 import os
@@ -20,21 +21,23 @@ import time
 import signal
 import logging
 import argparse
+import traceback
 from typing import Optional
 
 from nodeice_board.database import Database
 from nodeice_board.meshtastic_interface import MeshtasticInterface
 from nodeice_board.command_handler import CommandHandler
 from nodeice_board.post_expiration import PostExpirationHandler
+from nodeice_board.config import load_config, get_device_names
 
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # DEBUG level to see detailed encoding information
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('nodeice_board.log')
+        logging.FileHandler('nodeice_board.log', encoding='utf-8')  # Explicit UTF-8 encoding for log file
     ]
 )
 logger = logging.getLogger("NodeiceBoard")
@@ -45,27 +48,39 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Nodeice Board - Meshtastic notice board application')
     parser.add_argument('--device_path', help='Path to the Meshtastic device (optional, auto-detects if not provided)')
     parser.add_argument('--db_path', default='nodeice_board.db', help='Path to the database file')
+    parser.add_argument('--config_path', default='config.yaml', help='Path to the configuration file')
     return parser.parse_args()
 
 
 class NodeiceBoard:
     """Main application class for the Nodeice Board."""
     
-    def __init__(self, device_path: Optional[str] = None, db_path: str = 'nodeice_board.db'):
+    def __init__(self, device_path: Optional[str] = None, db_path: str = 'nodeice_board.db', config_path: str = 'config.yaml'):
         """
         Initialize the Nodeice Board application.
         
         Args:
             device_path: Path to the Meshtastic device. If None, auto-detect.
             db_path: Path to the SQLite database file.
+            config_path: Path to the configuration file.
         """
         self.device_path = device_path
         self.db_path = db_path
+        self.config_path = config_path
+        self.config = {}
         self.db = None
         self.mesh_interface = None
         self.command_handler = None
         self.expiration_handler = None
         self.running = False
+        
+        # Load configuration
+        self.load_config()
+        
+    def load_config(self):
+        """Load configuration from the config file."""
+        logger.info(f"Loading configuration from {self.config_path}")
+        self.config = load_config(self.config_path)
         
     def initialize(self):
         """Initialize all components of the application."""
@@ -108,8 +123,13 @@ class NodeiceBoard:
             return False
             
         try:
+            # Get device names from config
+            long_name, short_name = get_device_names(self.config)
+            if long_name or short_name:
+                logger.info(f"Using device names from config: long_name='{long_name}', short_name='{short_name}'")
+            
             # Connect to Meshtastic device
-            if not self.mesh_interface.connect():
+            if not self.mesh_interface.connect(long_name=long_name, short_name=short_name):
                 logger.error("Failed to connect to Meshtastic device")
                 return False
                 
@@ -122,10 +142,8 @@ class NodeiceBoard:
             self.running = True
             logger.info("Nodeice Board started successfully")
             
-            # Send a broadcast message to announce the board is online
-            self.mesh_interface.send_message(
-                "Nodeice Board is now online! Send !help for available commands."
-            )
+            # Don't send a broadcast message - wait for users to message first
+            # This prevents spamming the network with announcements
             
             return True
         except Exception as e:
@@ -169,12 +187,29 @@ class NodeiceBoard:
             message: The received message content.
             sender_id: The ID of the sender.
         """
-        logger.info(f"Processing message from {sender_id}: {message}")
-        
-        if self.command_handler:
-            self.command_handler.handle_message(message, sender_id)
-        else:
-            logger.error("Command handler not initialized")
+        try:
+            logger.info(f"NodeiceBoard.on_message_received called with message from {sender_id}: {message}")
+            
+            if not message:
+                logger.warning(f"Received empty message from {sender_id}")
+                return
+                
+            if self.command_handler:
+                # Log the command being processed
+                if message.startswith('!'):
+                    command_parts = message.split()
+                    command = command_parts[0] if command_parts else message
+                    logger.info(f"Received command: {command} from {sender_id}")
+                
+                # Handle the message
+                logger.debug(f"Passing message to command_handler.handle_message: '{message}'")
+                result = self.command_handler.handle_message(message, sender_id)
+                logger.info(f"Command handling result: {'Success' if result else 'Failed'}")
+            else:
+                logger.error("Command handler not initialized")
+        except Exception as e:
+            logger.error(f"Error in message handler: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             
     def run_forever(self):
         """Run the application until interrupted."""
@@ -210,7 +245,8 @@ def main():
     
     app = NodeiceBoard(
         device_path=args.device_path,
-        db_path=args.db_path
+        db_path=args.db_path,
+        config_path=args.config_path
     )
     
     if not app.initialize():

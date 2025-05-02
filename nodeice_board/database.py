@@ -73,7 +73,8 @@ class Database:
             content TEXT NOT NULL,
             author_id TEXT NOT NULL,
             author_name TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            visible BOOLEAN DEFAULT 1
         )
         ''')
         
@@ -165,7 +166,7 @@ class Database:
         """
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
+        cursor.execute("SELECT * FROM posts WHERE id = ? AND visible = 1", (post_id,))
         post = cursor.fetchone()
         
         if not post:
@@ -176,12 +177,13 @@ class Database:
             "content": post[1],
             "author_id": post[2],
             "author_name": post[3],
-            "created_at": post[4]
+            "created_at": post[4],
+            "visible": bool(post[5])
         }
 
     def get_recent_posts(self, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        Get the most recent posts.
+        Get the most recent visible posts.
         
         Args:
             limit: The maximum number of posts to retrieve.
@@ -192,7 +194,7 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM posts ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM posts WHERE visible = 1 ORDER BY created_at DESC LIMIT ?",
             (limit,)
         )
         posts = cursor.fetchall()
@@ -203,7 +205,8 @@ class Database:
                 "content": post[1],
                 "author_id": post[2],
                 "author_name": post[3],
-                "created_at": post[4]
+                "created_at": post[4],
+                "visible": bool(post[5])
             }
             for post in posts
         ]
@@ -276,15 +279,15 @@ class Database:
             for comment in comments
         ]
 
-    def delete_expired_posts(self, days: int = 7) -> int:
+    def mark_expired_posts_as_invisible(self, days: int = 7) -> int:
         """
-        Delete posts older than the specified number of days.
+        Mark posts older than the specified number of days as not visible.
         
         Args:
-            days: The number of days after which posts should be deleted.
+            days: The number of days after which posts should be marked as not visible.
             
         Returns:
-            The number of posts deleted.
+            The number of posts marked as not visible.
             
         Raises:
             ValueError: If days parameter is invalid.
@@ -300,12 +303,12 @@ class Database:
         # Use parameter directly without string concatenation
         days_str = str(days)
         cursor.execute(
-            "DELETE FROM posts WHERE created_at < datetime('now', '-' || ? || ' days')",
+            "UPDATE posts SET visible = 0 WHERE visible = 1 AND created_at < datetime('now', '-' || ? || ' days')",
             (days_str,)
         )
-        deleted_count = cursor.rowcount
+        updated_count = cursor.rowcount
         conn.commit()
-        return deleted_count
+        return updated_count
 
     def subscribe_to_all_posts(self, user_id: str) -> bool:
         """
@@ -531,6 +534,19 @@ class Database:
         subscribers = cursor.fetchall()
         
         return [sub[0] for sub in subscribers]
+
+    def get_total_posts_count(self) -> int:
+        """
+        Get the total number of posts ever created (both visible and invisible).
+        
+        Returns:
+            The total number of posts.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM posts")
+        count = cursor.fetchone()[0]
+        return count
 
     def close(self):
         """Close the database connection."""

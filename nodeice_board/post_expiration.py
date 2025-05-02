@@ -10,7 +10,7 @@ from nodeice_board.database import Database
 
 class PostExpirationHandler:
     """
-    Handler for expiring old posts after a specified period.
+    Handler for expiring old posts after a specified period by marking them as not visible.
     """
     
     def __init__(self, database: Database, expiration_days: int = 7, check_interval_hours: int = 12):
@@ -19,7 +19,7 @@ class PostExpirationHandler:
         
         Args:
             database: The database instance (used only for configuration, not directly accessed from thread).
-            expiration_days: Number of days after which posts should be expired (deleted).
+            expiration_days: Number of days after which posts should be marked as not visible.
             check_interval_hours: How often to check for expired posts (in hours).
         """
         # Store the database path rather than the database instance
@@ -42,7 +42,7 @@ class PostExpirationHandler:
         self.thread.start()
         
         self.logger.info(
-            f"Post expiration handler started (will delete posts older than {self.expiration_days} days, "
+            f"Post expiration handler started (will mark posts older than {self.expiration_days} days as not visible, "
             f"checking every {self.check_interval_seconds // 3600} hours)"
         )
         
@@ -61,23 +61,23 @@ class PostExpirationHandler:
     def _expiration_loop(self):
         """Main loop for the expiration handler."""
         # Run once immediately at startup
-        self._delete_expired_posts()
+        self._mark_expired_posts_as_invisible()
         
         # Then run periodically
         while not self.stop_event.wait(self.check_interval_seconds):
-            self._delete_expired_posts()
+            self._mark_expired_posts_as_invisible()
             
-    def _delete_expired_posts(self):
-        """Delete posts older than the expiration threshold."""
+    def _mark_expired_posts_as_invisible(self):
+        """Mark posts older than the expiration threshold as not visible."""
         # Create a new database connection in this thread
         thread_db = None
         try:
             thread_db = Database(self.db_path)
-            deleted_count = thread_db.delete_expired_posts(self.expiration_days)
-            if deleted_count > 0:
-                self.logger.info(f"Deleted {deleted_count} expired posts")
+            updated_count = thread_db.mark_expired_posts_as_invisible(self.expiration_days)
+            if updated_count > 0:
+                self.logger.info(f"Marked {updated_count} expired posts as not visible")
         except Exception as e:
-            self.logger.error(f"Error deleting expired posts: {e}")
+            self.logger.error(f"Error marking expired posts as not visible: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
         finally:
             # Close the database connection

@@ -231,9 +231,12 @@ class CommandHandler:
             self.send_message(intro_text, sender_id)
             time.sleep(0.5)  # Small delay between messages
             
+            # Get lifetime message count
+            total_posts = self.db.get_total_posts_count()
+            
             # Format help text with one command per line for better chunking
             help_text = (
-                "Nodeice Board Commands:\n"
+                f"Nodeice Board Commands (Lifetime messages: {total_posts}):\n"
                 "!post <message> - Create a new post\n"
                 "!list [n] - Show n recent posts (default: 5)\n"
                 "!view <post_id> - View a post and its comments\n"

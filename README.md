@@ -12,6 +12,7 @@ Features:
 - Subscription system for notifications about new posts and comments
 - Configurable automatic post expiration (default: 7 days)
 - Simple command-based interaction
+- Automatic prevention of multiple instances running simultaneously
 
 ## Requirements
 
@@ -114,6 +115,28 @@ This script helps with:
 - Adding your user to the dialout group (requires sudo)
 - Testing device connection
 
+#### Instance Management
+
+The Nodeice Board application includes a mechanism to prevent multiple instances from running simultaneously, which helps avoid conflicts and resource issues:
+
+```bash
+# This happens automatically when you run the application
+python main.py  # Will automatically check for and terminate any previous instances
+```
+
+When deploying on a Raspberry Pi or other Linux system, make sure the script is executable:
+
+```bash
+chmod +x kill_previous_instances.sh
+```
+
+This feature:
+- Detects any running instances of Nodeice Board
+- Safely terminates them before starting a new instance
+- Logs termination events for monitoring
+- Works with both manual execution and systemd service
+- Prevents potential database conflicts and resource contention
+
 #### Monitoring and Status Check
 
 To check the status of your Nodeice Board service and get basic monitoring information:
@@ -130,6 +153,7 @@ sudo ./check_nodeice_status.sh  # sudo recommended for full access
 
 This script provides information about:
 - Service status and uptime
+- Instance management status
 - Meshtastic device detection
 - Log file status and recent entries
 - Database statistics
@@ -194,6 +218,7 @@ The application consists of several components:
 - **Command Handler**: Processes incoming messages and executes commands
 - **Post Expiration Handler**: Automatically removes posts older than 7 days
 - **Config**: Handles loading and accessing configuration settings
+- **Instance Management**: Prevents conflicts by ensuring only one instance runs at a time
 
 ## Development
 
@@ -208,7 +233,12 @@ nodeice-board/
 │   ├── command_handler.py
 │   └── post_expiration.py
 ├── main.py
+├── install_service.sh
+├── setup_meshtastic_device.sh
+├── check_nodeice_status.sh
+├── kill_previous_instances.sh
 ├── pyproject.toml
+├── config.yaml
 └── README.md
 ```
 

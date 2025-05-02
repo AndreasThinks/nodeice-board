@@ -299,6 +299,21 @@ def main():
     """Main entry point for the application."""
     print("Starting Nodeice Board - Meshtastic Notice Board Application")
     
+    # Kill any previous instances to avoid conflicts
+    import subprocess
+    import os
+    
+    kill_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kill_previous_instances.sh")
+    try:
+        print("Checking for previous instances...")
+        # Make the script executable if it's not already
+        subprocess.run(["chmod", "+x", kill_script], check=False)
+        # Run the script to kill any previous instances
+        subprocess.run(["bash", kill_script], check=False)
+        print("Previous instance check completed.")
+    except Exception as e:
+        print(f"Warning: Failed to check for previous instances: {e}")
+    
     args = parse_args()
     
     app = NodeiceBoard(

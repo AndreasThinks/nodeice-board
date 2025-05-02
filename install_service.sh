@@ -76,6 +76,10 @@ fi
 echo -e "${YELLOW}Installing Nodeice Board and dependencies...${NC}"
 sudo -u $CURRENT_USER "$PROJECT_DIR/venv/bin/pip" install -e "$PROJECT_DIR"
 
+# Make the instance management script executable
+echo -e "${YELLOW}Setting up instance management...${NC}"
+chmod +x "$PROJECT_DIR/kill_previous_instances.sh"
+
 # Create the systemd service file
 echo -e "${YELLOW}Creating systemd service file...${NC}"
 cat > /etc/systemd/system/nodeice-board.service << EOF
@@ -96,6 +100,9 @@ Restart=on-failure
 RestartSec=30
 StandardOutput=journal
 StandardError=journal
+# Process management
+KillMode=mixed
+TimeoutStopSec=10
 
 # Security hardening
 ProtectSystem=full

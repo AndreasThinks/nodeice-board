@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 from nodeice_board.database import Database
+from nodeice_board.config import load_config, get_info_url
 
 
 class CommandHandler:
@@ -19,6 +20,11 @@ class CommandHandler:
     LIST_CMD = re.compile(r'^!list(?:\s+(\d+))?\s*$', re.IGNORECASE)
     VIEW_CMD = re.compile(r'^!view\s+(\d+)\s*$', re.IGNORECASE)
     COMMENT_CMD = re.compile(r'^!comment\s+(\d+)\s+(.+)$', re.IGNORECASE)
+    SUBSCRIBE_ALL_CMD = re.compile(r'^!subscribe\s+all\s*$', re.IGNORECASE)
+    SUBSCRIBE_POST_CMD = re.compile(r'^!subscribe\s+(\d+)\s*$', re.IGNORECASE)
+    UNSUBSCRIBE_ALL_CMD = re.compile(r'^!unsubscribe\s+all\s*$', re.IGNORECASE)
+    UNSUBSCRIBE_POST_CMD = re.compile(r'^!unsubscribe\s+(\d+)\s*$', re.IGNORECASE)
+    LIST_SUBSCRIPTIONS_CMD = re.compile(r'^!subscriptions\s*$', re.IGNORECASE)
     
     def __init__(self, database: Database, send_message_callback: Callable[[str, str], bool]):
         """
@@ -35,6 +41,10 @@ class CommandHandler:
         self.logger = logging.getLogger("NodeiceBoard")
         self.rate_limits = {}  # Store {sender_id: last_command_time}
         self.rate_limit_seconds = 1  # Minimum seconds between commands
+        
+        # Load config to get info URL
+        self.config = load_config()
+        self.info_url = get_info_url(self.config)
 
     def handle_message(self, message: str, sender_id: str) -> bool:
         """
@@ -124,6 +134,48 @@ class CommandHandler:
                 except ValueError:
                     self.send_message("Invalid post ID. Please use a number.", sender_id)
                     return False
+                    
+            # Subscription commands
+            match = CommandHandler.SUBSCRIBE_ALL_CMD.match(message)
+            if match:
+                self.logger.debug(f"Matched !subscribe all command from {sender_id}")
+                return self.handle_subscribe_all_command(sender_id)
+                
+            match = CommandHandler.SUBSCRIBE_POST_CMD.match(message)
+            if match:
+                try:
+                    post_id = int(match.group(1))
+                    if post_id <= 0:
+                        self.send_message("Invalid post ID. Please use a positive number.", sender_id)
+                        return False
+                    self.logger.debug(f"Matched !subscribe {post_id} command from {sender_id}")
+                    return self.handle_subscribe_post_command(post_id, sender_id)
+                except ValueError:
+                    self.send_message("Invalid post ID. Please use a number.", sender_id)
+                    return False
+                    
+            match = CommandHandler.UNSUBSCRIBE_ALL_CMD.match(message)
+            if match:
+                self.logger.debug(f"Matched !unsubscribe all command from {sender_id}")
+                return self.handle_unsubscribe_all_command(sender_id)
+                
+            match = CommandHandler.UNSUBSCRIBE_POST_CMD.match(message)
+            if match:
+                try:
+                    post_id = int(match.group(1))
+                    if post_id <= 0:
+                        self.send_message("Invalid post ID. Please use a positive number.", sender_id)
+                        return False
+                    self.logger.debug(f"Matched !unsubscribe {post_id} command from {sender_id}")
+                    return self.handle_unsubscribe_post_command(post_id, sender_id)
+                except ValueError:
+                    self.send_message("Invalid post ID. Please use a number.", sender_id)
+                    return False
+                    
+            match = CommandHandler.LIST_SUBSCRIPTIONS_CMD.match(message)
+            if match:
+                self.logger.debug(f"Matched !subscriptions command from {sender_id}")
+                return self.handle_list_subscriptions_command(sender_id)
             
             # If no command matched, let the user know
             self.logger.debug(f"No command matched for message from {sender_id}: {message}")
@@ -161,6 +213,15 @@ class CommandHandler:
         try:
             self.logger.info(f"handle_help_command called for sender {sender_id}")
             
+            # Send introduction message first
+            intro_text = (
+                "This is a public notice board. You can post topics or leave comments. "
+                "Everything is deleted once a week.\n\n"
+                f"Learn more here: {self.info_url}"
+            )
+            self.send_message(intro_text, sender_id)
+            time.sleep(0.5)  # Small delay between messages
+            
             # Format help text with one command per line for better chunking
             help_text = (
                 "Nodeice Board Commands:\n"
@@ -168,6 +229,11 @@ class CommandHandler:
                 "!list [n] - Show n recent posts (default: 5)\n"
                 "!view <post_id> - View a post and its comments\n"
                 "!comment <post_id> <message> - Comment on a post\n"
+                "!subscribe all - Subscribe to all new posts\n"
+                "!subscribe <post_id> - Subscribe to a specific post\n"
+                "!unsubscribe all - Unsubscribe from all notifications\n"
+                "!unsubscribe <post_id> - Unsubscribe from a specific post\n"
+                "!subscriptions - List your current subscriptions\n"
                 "!help - Show this help message"
             )
             
@@ -214,6 +280,10 @@ class CommandHandler:
             content = self.sanitize_content(content)
             post_id = self.db.create_post(content, sender_id)
             response = f"Post #{post_id} created successfully!"
+            
+            # Notify subscribers who are subscribed to all posts
+            self.notify_subscribers_for_new_post(post_id, content, sender_id)
+            
             return self.send_message(response, sender_id)
         except Exception as e:
             self.logger.error(f"Error creating post: {e}")
@@ -345,12 +415,234 @@ class CommandHandler:
             comment_id = self.db.create_comment(post_id, content, sender_id)
             response = f"Comment added to post #{post_id}"
             
+            # Notify subscribers who are subscribed to this post
+            self.notify_subscribers_for_new_comment(post_id, content, sender_id)
+            
             return self.send_message(response, sender_id)
         except Exception as e:
             self.logger.error(f"Error creating comment: {e}")
             error_msg = "Failed to create comment. Please try again later."
             self.send_message(error_msg, sender_id)
             return False
+            
+    def handle_subscribe_all_command(self, sender_id: str) -> bool:
+        """
+        Handle the !subscribe all command.
+        
+        Args:
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if the subscription was created successfully.
+        """
+        try:
+            result = self.db.subscribe_to_all_posts(sender_id)
+            
+            if result:
+                response = "You are now subscribed to all new posts."
+            else:
+                response = "You are already subscribed to all new posts."
+                
+            return self.send_message(response, sender_id)
+        except Exception as e:
+            self.logger.error(f"Error subscribing to all posts: {e}")
+            error_msg = "Failed to subscribe. Please try again later."
+            self.send_message(error_msg, sender_id)
+            return False
+            
+    def handle_subscribe_post_command(self, post_id: int, sender_id: str) -> bool:
+        """
+        Handle the !subscribe <post_id> command.
+        
+        Args:
+            post_id: The ID of the post to subscribe to.
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if the subscription was created successfully.
+        """
+        try:
+            result = self.db.subscribe_to_post(sender_id, post_id)
+            
+            if result:
+                response = f"You are now subscribed to post #{post_id}."
+            else:
+                response = f"You are already subscribed to post #{post_id}."
+                
+            return self.send_message(response, sender_id)
+        except ValueError as ve:
+            error_msg = str(ve)
+            self.send_message(error_msg, sender_id)
+            return False
+        except Exception as e:
+            self.logger.error(f"Error subscribing to post: {e}")
+            error_msg = "Failed to subscribe. Please try again later."
+            self.send_message(error_msg, sender_id)
+            return False
+            
+    def handle_unsubscribe_all_command(self, sender_id: str) -> bool:
+        """
+        Handle the !unsubscribe all command.
+        
+        Args:
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if the unsubscription was successful.
+        """
+        try:
+            count = self.db.unsubscribe_from_all(sender_id)
+            
+            if count > 0:
+                response = f"You have been unsubscribed from {count} subscription(s)."
+            else:
+                response = "You don't have any active subscriptions."
+                
+            return self.send_message(response, sender_id)
+        except Exception as e:
+            self.logger.error(f"Error unsubscribing from all: {e}")
+            error_msg = "Failed to unsubscribe. Please try again later."
+            self.send_message(error_msg, sender_id)
+            return False
+            
+    def handle_unsubscribe_post_command(self, post_id: int, sender_id: str) -> bool:
+        """
+        Handle the !unsubscribe <post_id> command.
+        
+        Args:
+            post_id: The ID of the post to unsubscribe from.
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if the unsubscription was successful.
+        """
+        try:
+            result = self.db.unsubscribe_from_post(sender_id, post_id)
+            
+            if result:
+                response = f"You have been unsubscribed from post #{post_id}."
+            else:
+                response = f"You were not subscribed to post #{post_id}."
+                
+            return self.send_message(response, sender_id)
+        except Exception as e:
+            self.logger.error(f"Error unsubscribing from post: {e}")
+            error_msg = "Failed to unsubscribe. Please try again later."
+            self.send_message(error_msg, sender_id)
+            return False
+            
+    def handle_list_subscriptions_command(self, sender_id: str) -> bool:
+        """
+        Handle the !subscriptions command.
+        
+        Args:
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if the subscriptions were listed successfully.
+        """
+        try:
+            subscriptions = self.db.get_user_subscriptions(sender_id)
+            
+            if not subscriptions:
+                return self.send_message("You don't have any active subscriptions.", sender_id)
+                
+            # Send header as a separate message
+            self.send_message("Your subscriptions:", sender_id)
+            time.sleep(0.5)  # Small delay between messages
+            
+            # Send each subscription as a separate message
+            for sub in subscriptions:
+                if sub["all_posts"]:
+                    sub_text = "All new posts"
+                else:
+                    # Truncate content if needed
+                    content = sub["post_content"] or "Unknown post"
+                    if len(content) > 30:
+                        content = content[:27] + "..."
+                    sub_text = f"Post #{sub['post_id']}: {content}"
+                
+                self.send_message(sub_text, sender_id)
+                time.sleep(0.5)  # Small delay between messages
+                
+            return True
+        except Exception as e:
+            self.logger.error(f"Error listing subscriptions: {e}")
+            error_msg = "Failed to retrieve subscriptions. Please try again later."
+            self.send_message(error_msg, sender_id)
+            return False
+            
+    def notify_subscribers_for_new_post(self, post_id: int, content: str, author_id: str) -> None:
+        """
+        Notify subscribers about a new post.
+        
+        Args:
+            post_id: The ID of the new post.
+            content: The content of the post.
+            author_id: The ID of the post author.
+        """
+        try:
+            # Get all users subscribed to all posts
+            subscribers = self.db.get_subscribers_for_all_posts()
+            
+            # Don't notify the author
+            if author_id in subscribers:
+                subscribers.remove(author_id)
+                
+            if not subscribers:
+                return
+                
+            # Truncate content if needed
+            if len(content) > 50:
+                content = content[:47] + "..."
+                
+            # Send notification to each subscriber
+            notification = f"New post #{post_id}: {content}"
+            
+            for subscriber_id in subscribers:
+                try:
+                    self.send_message(notification, subscriber_id)
+                    time.sleep(0.5)  # Small delay between messages
+                except Exception as e:
+                    self.logger.error(f"Error notifying subscriber {subscriber_id}: {e}")
+        except Exception as e:
+            self.logger.error(f"Error notifying subscribers for new post: {e}")
+            
+    def notify_subscribers_for_new_comment(self, post_id: int, content: str, author_id: str) -> None:
+        """
+        Notify subscribers about a new comment on a post.
+        
+        Args:
+            post_id: The ID of the post that was commented on.
+            content: The content of the comment.
+            author_id: The ID of the comment author.
+        """
+        try:
+            # Get all users subscribed to this post
+            subscribers = self.db.get_subscribers_for_post(post_id)
+            
+            # Don't notify the author
+            if author_id in subscribers:
+                subscribers.remove(author_id)
+                
+            if not subscribers:
+                return
+                
+            # Truncate content if needed
+            if len(content) > 50:
+                content = content[:47] + "..."
+                
+            # Send notification to each subscriber
+            notification = f"New comment on post #{post_id}: {content}"
+            
+            for subscriber_id in subscribers:
+                try:
+                    self.send_message(notification, subscriber_id)
+                    time.sleep(0.5)  # Small delay between messages
+                except Exception as e:
+                    self.logger.error(f"Error notifying subscriber {subscriber_id}: {e}")
+        except Exception as e:
+            self.logger.error(f"Error notifying subscribers for new comment: {e}")
             
     def _format_time_ago(self, timestamp_str: str) -> str:
         """

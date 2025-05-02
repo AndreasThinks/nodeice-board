@@ -90,9 +90,31 @@ class Database:
         )
         ''')
         
+        # Subscriptions table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            post_id INTEGER,
+            all_posts BOOLEAN DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE
+        )
+        ''')
+        
         # Index for finding posts by date (for expiration)
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at)
+        ''')
+        
+        # Index for finding subscriptions by user
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions (user_id)
+        ''')
+        
+        # Index for finding subscriptions by post
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_post_id ON subscriptions (post_id)
         ''')
         
         conn.commit()
@@ -284,6 +306,231 @@ class Database:
         deleted_count = cursor.rowcount
         conn.commit()
         return deleted_count
+
+    def subscribe_to_all_posts(self, user_id: str) -> bool:
+        """
+        Subscribe a user to notifications for all new posts.
+        
+        Args:
+            user_id: The Meshtastic node ID of the user.
+            
+        Returns:
+            True if subscription was created successfully, False if already exists.
+            
+        Raises:
+            ValueError: If user_id is invalid.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Check if subscription already exists
+        cursor.execute(
+            "SELECT id FROM subscriptions WHERE user_id = ? AND all_posts = 1",
+            (user_id,)
+        )
+        if cursor.fetchone():
+            return False  # Already subscribed
+            
+        # Create subscription
+        cursor.execute(
+            "INSERT INTO subscriptions (user_id, post_id, all_posts) VALUES (?, NULL, 1)",
+            (user_id,)
+        )
+        conn.commit()
+        return True
+        
+    def subscribe_to_post(self, user_id: str, post_id: int) -> bool:
+        """
+        Subscribe a user to notifications for a specific post.
+        
+        Args:
+            user_id: The Meshtastic node ID of the user.
+            post_id: The ID of the post to subscribe to.
+            
+        Returns:
+            True if subscription was created successfully, False if already exists.
+            
+        Raises:
+            ValueError: If user_id or post_id is invalid.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+            
+        if not isinstance(post_id, int) or post_id <= 0:
+            raise ValueError("Invalid post ID")
+            
+        # Check if post exists
+        post = self.get_post(post_id)
+        if not post:
+            raise ValueError(f"Post #{post_id} not found")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Check if subscription already exists
+        cursor.execute(
+            "SELECT id FROM subscriptions WHERE user_id = ? AND post_id = ?",
+            (user_id, post_id)
+        )
+        if cursor.fetchone():
+            return False  # Already subscribed
+            
+        # Create subscription
+        cursor.execute(
+            "INSERT INTO subscriptions (user_id, post_id, all_posts) VALUES (?, ?, 0)",
+            (user_id, post_id)
+        )
+        conn.commit()
+        return True
+        
+    def unsubscribe_from_all(self, user_id: str) -> int:
+        """
+        Unsubscribe a user from all notifications.
+        
+        Args:
+            user_id: The Meshtastic node ID of the user.
+            
+        Returns:
+            The number of subscriptions deleted.
+            
+        Raises:
+            ValueError: If user_id is invalid.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "DELETE FROM subscriptions WHERE user_id = ?",
+            (user_id,)
+        )
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return deleted_count
+        
+    def unsubscribe_from_post(self, user_id: str, post_id: int) -> bool:
+        """
+        Unsubscribe a user from notifications for a specific post.
+        
+        Args:
+            user_id: The Meshtastic node ID of the user.
+            post_id: The ID of the post to unsubscribe from.
+            
+        Returns:
+            True if subscription was deleted, False if not found.
+            
+        Raises:
+            ValueError: If user_id or post_id is invalid.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+            
+        if not isinstance(post_id, int) or post_id <= 0:
+            raise ValueError("Invalid post ID")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "DELETE FROM subscriptions WHERE user_id = ? AND post_id = ?",
+            (user_id, post_id)
+        )
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+        
+    def get_user_subscriptions(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all subscriptions for a user.
+        
+        Args:
+            user_id: The Meshtastic node ID of the user.
+            
+        Returns:
+            A list of subscription dictionaries.
+            
+        Raises:
+            ValueError: If user_id is invalid.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT s.id, s.user_id, s.post_id, s.all_posts, s.created_at, 
+                   p.content as post_content
+            FROM subscriptions s
+            LEFT JOIN posts p ON s.post_id = p.id
+            WHERE s.user_id = ?
+            ORDER BY s.created_at DESC
+            """,
+            (user_id,)
+        )
+        subscriptions = cursor.fetchall()
+        
+        return [
+            {
+                "id": sub[0],
+                "user_id": sub[1],
+                "post_id": sub[2],
+                "all_posts": bool(sub[3]),
+                "created_at": sub[4],
+                "post_content": sub[5] if sub[2] else None
+            }
+            for sub in subscriptions
+        ]
+        
+    def get_subscribers_for_all_posts(self) -> List[str]:
+        """
+        Get all users subscribed to all posts.
+        
+        Returns:
+            A list of user IDs.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT DISTINCT user_id FROM subscriptions WHERE all_posts = 1"
+        )
+        subscribers = cursor.fetchall()
+        
+        return [sub[0] for sub in subscribers]
+        
+    def get_subscribers_for_post(self, post_id: int) -> List[str]:
+        """
+        Get all users subscribed to a specific post.
+        
+        Args:
+            post_id: The ID of the post.
+            
+        Returns:
+            A list of user IDs.
+            
+        Raises:
+            ValueError: If post_id is invalid.
+        """
+        if not isinstance(post_id, int) or post_id <= 0:
+            raise ValueError("Invalid post ID")
+            
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT DISTINCT user_id FROM subscriptions WHERE post_id = ?",
+            (post_id,)
+        )
+        subscribers = cursor.fetchall()
+        
+        return [sub[0] for sub in subscribers]
 
     def close(self):
         """Close the database connection."""

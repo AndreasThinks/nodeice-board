@@ -70,3 +70,26 @@ def get_device_names(config: Dict[str, Any]) -> tuple[Optional[str], Optional[st
         logger.error(f"Error getting device names from config: {e}")
         
     return long_name, short_name
+
+def get_info_url(config: Dict[str, Any]) -> str:
+    """
+    Get the information URL from the configuration.
+    
+    Args:
+        config: The configuration dictionary.
+        
+    Returns:
+        The URL string, or a default URL if not found.
+    """
+    default_url = "https://github.com/AndreasThinks/nodeice-board"
+    
+    try:
+        if 'Nodeice_board' in config:
+            nodeice_config = config['Nodeice_board']
+            
+            if isinstance(nodeice_config, dict) and 'Info_URL' in nodeice_config:
+                return nodeice_config['Info_URL']
+    except Exception as e:
+        logger.error(f"Error getting info URL from config: {e}")
+        
+    return default_url

@@ -16,6 +16,7 @@ class CommandHandler:
     
     # Command patterns
     HELP_CMD = re.compile(r'^!help\s*$', re.IGNORECASE)
+    INFO_CMD = re.compile(r'^!info\s*$', re.IGNORECASE)
     POST_CMD = re.compile(r'^!post\s+(.+)$', re.IGNORECASE)
     LIST_CMD = re.compile(r'^!list(?:\s+(\d+))?\s*$', re.IGNORECASE)
     VIEW_CMD = re.compile(r'^!view\s+(\d+)\s*$', re.IGNORECASE)
@@ -87,6 +88,10 @@ class CommandHandler:
             if CommandHandler.HELP_CMD.match(message):
                 self.logger.debug(f"Matched !help command from {sender_id}")
                 return self.handle_help_command(sender_id)
+                
+            if CommandHandler.INFO_CMD.match(message):
+                self.logger.debug(f"Matched !info command from {sender_id}")
+                return self.handle_info_command(sender_id)
                 
             match = CommandHandler.POST_CMD.match(message)
             if match:
@@ -211,28 +216,16 @@ class CommandHandler:
             self.logger.info(f"handle_help_command called for sender {sender_id}")
             
             # Send introduction message first
-            deletion_period = "once a week" if self.expiration_days == 7 else f"after {self.expiration_days} days"
-            
-            # Calculate days until next deletion
-            # This is a simple approximation - in a real system you might want to get the actual scheduled time
-            # from the PostExpirationHandler
-            days_until_deletion = self.expiration_days
-            
             intro_text = (
-                "This is a public notice board. You can post topics or leave comments. "
-                f"Everything is deleted {deletion_period}. "
-                f"Next deletion in {days_until_deletion} days.\n\n"
+                "This is a public notice board. You can post topics or leave comments.\n\n"
                 f"Learn more here: {self.info_url}"
             )
             self.send_message(intro_text, sender_id)
             time.sleep(0.5)  # Small delay between messages
             
-            # Get lifetime message count
-            total_posts = self.db.get_total_posts_count()
-            
             # Format help text with one command per line for better chunking
             help_text = (
-                f"Nodeice Board Commands (Lifetime messages: {total_posts}):\n"
+                "Nodeice Board Commands:\n"
                 "!post <message> - Create a new post\n"
                 "!list [n] - Show n recent posts (default: 5)\n"
                 "!view <post_id> - View a post and its comments\n"
@@ -242,6 +235,7 @@ class CommandHandler:
                 "!unsubscribe all - Unsubscribe from all notifications\n"
                 "!unsubscribe <post_id> - Unsubscribe from a specific post\n"
                 "!subscriptions - List your current subscriptions\n"
+                "!info - Show board statistics\n"
                 "!help - Show this help message"
             )
             
@@ -652,6 +646,59 @@ class CommandHandler:
                     self.logger.error(f"Error notifying subscriber {subscriber_id}: {e}")
         except Exception as e:
             self.logger.error(f"Error notifying subscribers for new comment: {e}")
+            
+    def handle_info_command(self, sender_id: str) -> bool:
+        """
+        Handle the !info command.
+        
+        Args:
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if message was sent successfully.
+        """
+        try:
+            self.logger.info(f"handle_info_command called for sender {sender_id}")
+            
+            # Get total number of messages posted ever
+            total_posts = self.db.get_total_posts_count()
+            
+            # Calculate time until next wipe
+            days_until_deletion = self.expiration_days
+            
+            # Get system uptime
+            uptime = "Unknown"
+            try:
+                with open('/proc/uptime', 'r') as f:
+                    uptime_seconds = float(f.readline().split()[0])
+                    days = int(uptime_seconds // 86400)
+                    hours = int((uptime_seconds % 86400) // 3600)
+                    minutes = int((uptime_seconds % 3600) // 60)
+                    uptime = f"{days}d {hours}h {minutes}m"
+            except Exception as e:
+                self.logger.error(f"Error getting uptime: {e}")
+                # Fallback method for systems without /proc/uptime
+                try:
+                    import subprocess
+                    result = subprocess.run(['uptime', '-p'], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        uptime = result.stdout.strip()
+                except Exception as e2:
+                    self.logger.error(f"Error getting uptime via subprocess: {e2}")
+            
+            # Format and send the info message
+            info_text = (
+                "Nodeice Board Info:\n"
+                f"Total messages posted: {total_posts}\n"
+                f"Next wipe in: {days_until_deletion} days\n"
+                f"System uptime: {uptime}"
+            )
+            
+            return self.send_message(info_text, sender_id)
+        except Exception as e:
+            self.logger.error(f"Error handling info command: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
             
     def _format_time_ago(self, timestamp_str: str) -> str:
         """

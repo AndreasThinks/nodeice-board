@@ -14,6 +14,14 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}${BOLD}===== Nodeice Board Status Check =====${NC}"
 echo
 
+# Check if the kill_previous_instances script exists
+if [ -f "kill_previous_instances.sh" ]; then
+    echo -e "${BOLD}Instance Management:${NC}"
+    echo -e "Instance conflict prevention: ${GREEN}Enabled${NC}"
+    echo -e "The system will automatically prevent multiple instances from running simultaneously."
+    echo
+fi
+
 # Check if the service is installed
 if [ ! -f "/etc/systemd/system/nodeice-board.service" ]; then
     echo -e "${RED}Nodeice Board service is not installed.${NC}"

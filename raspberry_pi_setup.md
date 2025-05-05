@@ -18,7 +18,7 @@ For a quick and easy setup, use the provided installation script:
 
 1. Make all scripts executable:
    ```bash
-   chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh
+   chmod +x install_service.sh setup_meshtastic_device.sh check_nodeice_status.sh kill_previous_instances.sh
    ```
 
 2. Run the installation script with sudo (REQUIRED):
@@ -267,31 +267,55 @@ If the service can't access the USB device:
    sudo udevadm trigger  # sudo required - managing system services
    ```
 
+## Instance Management
+
+Nodeice Board includes a mechanism to prevent multiple instances from running simultaneously, which helps avoid conflicts and resource issues:
+
+1. Make the instance management script executable:
+   ```bash
+   chmod +x kill_previous_instances.sh
+   ```
+
+2. The script is automatically called when starting the application:
+   ```bash
+   # This happens automatically when you run the application
+   python main.py  # Will automatically check for and terminate any previous instances
+   ```
+
+This feature:
+- Detects any running instances of Nodeice Board
+- Safely terminates them before starting a new instance
+- Logs termination events for monitoring
+- Works with both manual execution and systemd service
+- Prevents potential database conflicts and resource contention
+
 ## Updating
 
 To update Nodeice Board:
 
-1. Stop the service:
-   ```bash
-   sudo systemctl stop nodeice-board.service  # sudo required - managing systemd
-   ```
-
-2. Pull the latest changes:
+1. Pull the latest changes:
    ```bash
    cd /path/to/nodeice-board
    git pull  # no sudo needed for git operations
    ```
 
-3. Update dependencies:
+2. Update dependencies:
    ```bash
    source venv/bin/activate
    pip install -e .  # no sudo needed when using virtualenv
    ```
 
+3. Make sure the instance management script is executable:
+   ```bash
+   chmod +x kill_previous_instances.sh
+   ```
+
 4. Restart the service:
    ```bash
-   sudo systemctl start nodeice-board.service  # sudo required - managing systemd
+   sudo systemctl restart nodeice-board.service  # sudo required - managing systemd
    ```
+
+Note: You don't need to manually stop the service before restarting it. The application will automatically detect and terminate any previous instances when it starts.
 
 ## Advanced Configuration
 
@@ -430,13 +454,28 @@ To monitor the health of your Nodeice Board service, you can set up a simple hea
 
 ### Running Multiple Instances
 
-If you need to run multiple instances of Nodeice Board (for different Meshtastic devices), create separate service files with different names and configurations:
+If you need to run multiple instances of Nodeice Board (for different Meshtastic devices), you'll need to configure them to avoid the automatic instance management from terminating each other:
 
-```bash
-sudo cp /etc/systemd/system/nodeice-board.service /etc/systemd/system/nodeice-board-2.service  # sudo required - writing to system directory
-```
+1. Create separate service files with different names:
+   ```bash
+   sudo cp /etc/systemd/system/nodeice-board.service /etc/systemd/system/nodeice-board-2.service  # sudo required - writing to system directory
+   ```
 
-Then edit the new service file to use different paths and parameters:
-```bash
-sudo nano /etc/systemd/system/nodeice-board-2.service  # sudo required - editing system file
-```
+2. Edit the new service file to use different paths and parameters:
+   ```bash
+   sudo nano /etc/systemd/system/nodeice-board-2.service  # sudo required - editing system file
+   ```
+
+3. Modify the ExecStart line to include a unique identifier that will prevent the instance management from terminating the other instance:
+   ```
+   ExecStart=/home/pi/nodeice-board/venv/bin/python /home/pi/nodeice-board/main.py --db_path=/path/to/nodeice_board_2.db
+   ```
+
+   By using different database paths, each instance will have its own unique command line, which the instance management script uses to differentiate between instances.
+
+4. Make sure each instance uses:
+   - Different database files (--db_path)
+   - Different Meshtastic devices (--device_path) if applicable
+   - Different working directories if running completely separate installations
+
+This configuration ensures that each instance will only terminate previous versions of itself, not other configured instances.

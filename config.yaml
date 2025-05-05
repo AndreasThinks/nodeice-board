@@ -1,5 +1,5 @@
 Nodeice_board:
-  Long_Name: "Nodeice Board📌Msg me !help"
-  Short_Name: "NDB"
+  Long_Name: "Nodice Board-Msg \"!help! for instructions\""
+  Short_Name: "N📌B"
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"
   Expiration_Days: 7

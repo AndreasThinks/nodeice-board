@@ -387,6 +387,86 @@ class MeshtasticInterface:
         self.connect(long_name=self.long_name, short_name=self.short_name)
         return self
 
+    def get_nodes(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get information about connected nodes.
+        
+        Returns:
+            Dictionary mapping node IDs to node information dictionaries.
+            Each node info dictionary contains:
+            - active: Whether the node is active
+            - name: The node's name (if available)
+            - battery_level: The node's battery level (if available)
+            - signal_strength: The node's signal strength (if available)
+            - latitude: The node's latitude (if available)
+            - longitude: The node's longitude (if available)
+            - altitude: The node's altitude (if available)
+        """
+        nodes = {}
+        
+        try:
+            if not self.interface:
+                self.logger.error("Not connected to Meshtastic device")
+                return nodes
+                
+            # Get nodes from the interface
+            if hasattr(self.interface, 'nodes'):
+                mesh_nodes = self.interface.nodes
+                
+                # Process each node
+                for node_id, node_info in mesh_nodes.items():
+                    # Convert node_id to string if it's not already
+                    node_id_str = str(node_id)
+                    
+                    # Create a node info dictionary
+                    node_data = {
+                        'active': True,  # Assume active if in the nodes list
+                        'name': None,
+                        'battery_level': None,
+                        'signal_strength': None,
+                        'latitude': None,
+                        'longitude': None,
+                        'altitude': None
+                    }
+                    
+                    # Extract node name
+                    if hasattr(node_info, 'user') and node_info.user:
+                        if hasattr(node_info.user, 'longName') and node_info.user.longName:
+                            node_data['name'] = node_info.user.longName
+                        elif hasattr(node_info.user, 'shortName') and node_info.user.shortName:
+                            node_data['name'] = node_info.user.shortName
+                    
+                    # Extract position information if available
+                    if hasattr(node_info, 'position') and node_info.position:
+                        if hasattr(node_info.position, 'latitude'):
+                            node_data['latitude'] = node_info.position.latitude
+                        if hasattr(node_info.position, 'longitude'):
+                            node_data['longitude'] = node_info.position.longitude
+                        if hasattr(node_info.position, 'altitude'):
+                            node_data['altitude'] = node_info.position.altitude
+                    
+                    # Extract device metrics if available
+                    if hasattr(node_info, 'deviceMetrics') and node_info.deviceMetrics:
+                        if hasattr(node_info.deviceMetrics, 'batteryLevel'):
+                            node_data['battery_level'] = node_info.deviceMetrics.batteryLevel
+                    
+                    # Extract signal strength if available (might be in different places depending on API version)
+                    if hasattr(node_info, 'snr'):
+                        node_data['signal_strength'] = node_info.snr
+                    elif hasattr(node_info, 'deviceMetrics') and hasattr(node_info.deviceMetrics, 'snr'):
+                        node_data['signal_strength'] = node_info.deviceMetrics.snr
+                    
+                    # Add to nodes dictionary
+                    nodes[node_id_str] = node_data
+            else:
+                self.logger.warning("Interface does not have nodes attribute")
+                
+        except Exception as e:
+            self.logger.error(f"Error getting nodes: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            
+        return nodes
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.disconnect()

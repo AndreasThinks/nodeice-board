@@ -26,6 +26,7 @@ class CommandHandler:
     UNSUBSCRIBE_ALL_CMD = re.compile(r'^!unsubscribe\s+all\s*$', re.IGNORECASE)
     UNSUBSCRIBE_POST_CMD = re.compile(r'^!unsubscribe\s+(\d+)\s*$', re.IGNORECASE)
     LIST_SUBSCRIPTIONS_CMD = re.compile(r'^!subscriptions\s*$', re.IGNORECASE)
+    STATUS_CMD = re.compile(r'^!status\s*$', re.IGNORECASE)
     
     def __init__(self, database: Database, send_message_callback: Callable[[str, str], bool]):
         """
@@ -182,6 +183,11 @@ class CommandHandler:
             if match:
                 self.logger.debug(f"Matched !subscriptions command from {sender_id}")
                 return self.handle_list_subscriptions_command(sender_id)
+                
+            match = CommandHandler.STATUS_CMD.match(message)
+            if match:
+                self.logger.debug(f"Matched !status command from {sender_id}")
+                return self.handle_status_command(sender_id)
             
             # If no command matched, just log it but don't respond
             self.logger.debug(f"No command matched for message from {sender_id}: {message}")
@@ -235,6 +241,7 @@ class CommandHandler:
                 "!unsubscribe all - Unsubscribe from all notifications\n"
                 "!unsubscribe <post_id> - Unsubscribe from a specific post\n"
                 "!subscriptions - List your current subscriptions\n"
+                "!status - Show network status information\n"
                 "!info - Show board statistics\n"
                 "!help - Show this help message"
             )
@@ -697,6 +704,81 @@ class CommandHandler:
             return self.send_message(info_text, sender_id)
         except Exception as e:
             self.logger.error(f"Error handling info command: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
+            
+    def handle_status_command(self, sender_id: str) -> bool:
+        """
+        Handle the !status command.
+        
+        Args:
+            sender_id: The ID of the sender.
+            
+        Returns:
+            True if message was sent successfully.
+        """
+        try:
+            self.logger.info(f"handle_status_command called for sender {sender_id}")
+            
+            # Get database connection
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Get node count
+            try:
+                cursor.execute("SELECT COUNT(*) FROM node_status WHERE status = 'active'")
+                active_nodes = cursor.fetchone()[0]
+            except Exception as e:
+                self.logger.error(f"Error getting active nodes count: {e}")
+                active_nodes = "Unknown"
+            
+            # Get post count
+            cursor.execute("SELECT COUNT(*) FROM posts WHERE visible = 1")
+            active_posts = cursor.fetchone()[0]
+            
+            # Get comment count
+            cursor.execute("SELECT COUNT(*) FROM comments")
+            comments = cursor.fetchone()[0]
+            
+            # Get system uptime
+            uptime = "Unknown"
+            try:
+                cursor.execute(
+                    "SELECT metric_value FROM metrics WHERE metric_name = 'system_uptime_seconds' ORDER BY timestamp DESC LIMIT 1"
+                )
+                result = cursor.fetchone()
+                if result:
+                    uptime_seconds = result[0]
+                    days = int(uptime_seconds // 86400)
+                    hours = int((uptime_seconds % 86400) // 3600)
+                    minutes = int((uptime_seconds % 3600) // 60)
+                    uptime = f"{days}d {hours}h {minutes}m"
+            except Exception as e:
+                self.logger.error(f"Error getting uptime from metrics: {e}")
+                # Fallback to direct system check
+                try:
+                    with open('/proc/uptime', 'r') as f:
+                        uptime_seconds = float(f.readline().split()[0])
+                        days = int(uptime_seconds // 86400)
+                        hours = int((uptime_seconds % 86400) // 3600)
+                        minutes = int((uptime_seconds % 3600) // 60)
+                        uptime = f"{days}d {hours}h {minutes}m"
+                except Exception as e2:
+                    self.logger.error(f"Error getting uptime from /proc: {e2}")
+            
+            # Format the status message
+            status_text = (
+                "Nodeice Board Status:\n"
+                f"Active nodes: {active_nodes}\n"
+                f"Active posts: {active_posts}\n"
+                f"Total comments: {comments}\n"
+                f"System uptime: {uptime}"
+            )
+            
+            # Send the status message
+            return self.send_message(status_text, sender_id)
+        except Exception as e:
+            self.logger.error(f"Error handling status command: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return False
             

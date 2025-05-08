@@ -1,0 +1,31 @@
+display:
+  # Hardware settings
+  hardware_mapping: "adafruit-hat"  # Default for Adafruit RGB HAT
+  rows: 32
+  cols: 32
+  chain_length: 1
+  parallel: 1
+  brightness: 70  # 0-100
+  gpio_slowdown: 2  # Adjust based on your Raspberry Pi model
+  
+  # Visual settings
+  title_color: [255, 255, 255]  # RGB values
+  logo_position: "top-left"     # top-left, top-right, bottom-left, bottom-right
+  background_color: [0, 0, 0]   # RGB values
+  
+  # Animation settings
+  rotation_interval: 5          # Seconds between rotating stats
+  message_display_time: 15      # Seconds to show a new message
+  scroll_speed: 2               # Pixels per frame
+  
+  # Message counter
+  counter_position: "bottom-right"
+  counter_color: [0, 255, 0]    # Green
+  
+database:
+  path: "../nodeice_board.db"   # Path to the Nodeice Board database
+  poll_interval: 2              # Seconds between database checks
+  
+logging:
+  level: "INFO"                 # DEBUG, INFO, WARNING, ERROR
+  file: "/var/log/nodeice-matrix/matrix.log"

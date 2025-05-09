@@ -5,7 +5,7 @@ Configuration module for Nodeice Board.
 import os
 import logging
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, Union, List
 
 logger = logging.getLogger("NodeiceBoard")
 
@@ -120,3 +120,67 @@ def get_expiration_days(config: Dict[str, Any]) -> int:
         logger.error(f"Error getting expiration days from config: {e}")
         
     return default_days
+
+def get_led_matrix_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get the LED matrix configuration from the configuration.
+    
+    Args:
+        config: The configuration dictionary.
+        
+    Returns:
+        A dictionary containing the LED matrix configuration, or default values if not found.
+    """
+    default_config = {
+        "Enabled": False,
+        "Hardware_Mapping": "adafruit-hat",
+        "Rows": 32,
+        "Cols": 32,
+        "Chain_Length": 1,
+        "Parallel": 1,
+        "Brightness": 50,
+        "GPIO_Slowdown": 2,
+        "Display_Mode": "standard",
+        "Status_Cycle_Seconds": 5,
+        "Message_Effect": "rainbow",
+        "Interactive": True,
+        "Auto_Brightness": True
+    }
+    
+    matrix_config = {}
+    
+    try:
+        if 'Nodeice_board' in config and 'LED_Matrix' in config['Nodeice_board']:
+            matrix_config = config['Nodeice_board']['LED_Matrix']
+            
+            # Validate the config
+            if not isinstance(matrix_config, dict):
+                logger.warning(f"Invalid LED_Matrix configuration format, using defaults")
+                return default_config
+    except Exception as e:
+        logger.error(f"Error getting LED matrix config: {e}")
+        return default_config
+        
+    # Merge with defaults
+    for key, value in default_config.items():
+        if key not in matrix_config:
+            matrix_config[key] = value
+            
+    return matrix_config
+
+def get_led_matrix_enabled(config: Dict[str, Any]) -> bool:
+    """
+    Check if the LED matrix is enabled in the configuration.
+    
+    Args:
+        config: The configuration dictionary.
+        
+    Returns:
+        True if the LED matrix is enabled, False otherwise.
+    """
+    try:
+        matrix_config = get_led_matrix_config(config)
+        return matrix_config.get("Enabled", False)
+    except Exception as e:
+        logger.error(f"Error checking if LED matrix is enabled: {e}")
+        return False

@@ -3,3 +3,17 @@ Nodeice_board:
   Short_Name: "N📌B"
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"
   Expiration_Days: 7
+  LED_Matrix:
+    Enabled: true
+    Hardware_Mapping: "adafruit-hat"
+    Rows: 32
+    Cols: 32
+    Chain_Length: 1
+    Parallel: 1
+    Brightness: 50
+    GPIO_Slowdown: 2
+    Display_Mode: "standard"
+    Status_Cycle_Seconds: 5
+    Message_Effect: "rainbow"
+    Interactive: true
+    Auto_Brightness: true

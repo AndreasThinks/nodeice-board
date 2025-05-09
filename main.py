@@ -36,7 +36,6 @@ from nodeice_board.database import Database
 from nodeice_board.meshtastic_interface import MeshtasticInterface
 from nodeice_board.command_handler import CommandHandler
 from nodeice_board.post_expiration import PostExpirationHandler
-from nodeice_board.metrics_collector import MetricsCollector
 from nodeice_board.config import load_config, get_device_names, get_expiration_days
 
 
@@ -119,7 +118,6 @@ class NodeiceBoard:
         self.mesh_interface = None
         self.command_handler = None
         self.expiration_handler = None
-        self.metrics_collector = None
         self.running = False
         
         # Load configuration
@@ -160,14 +158,6 @@ class NodeiceBoard:
                 check_interval_hours=6  # Check for expired posts every 6 hours
             )
             
-            # Initialize metrics collector
-            logger.info("Initializing metrics collector")
-            self.metrics_collector = MetricsCollector(
-                database=self.db,
-                mesh_interface=self.mesh_interface,
-                collection_interval_seconds=300  # Collect metrics every 5 minutes
-            )
-            
             return True
         except Exception as e:
             logger.error(f"Initialization error: {e}")
@@ -196,9 +186,6 @@ class NodeiceBoard:
             # Start the post expiration handler
             self.expiration_handler.start()
             
-            # Start the metrics collector
-            self.metrics_collector.start()
-            
             self.running = True
             logger.info("Nodeice Board started successfully")
             
@@ -221,13 +208,6 @@ class NodeiceBoard:
                 self.expiration_handler.stop()
             except Exception as e:
                 logger.error(f"Error stopping expiration handler: {e}")
-                
-        # Stop the metrics collector
-        if self.metrics_collector:
-            try:
-                self.metrics_collector.stop()
-            except Exception as e:
-                logger.error(f"Error stopping metrics collector: {e}")
                 
         # Disconnect from Meshtastic device
         if self.mesh_interface:

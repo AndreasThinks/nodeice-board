@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "nodeice-board"
 version = "0.1.0"
@@ -8,7 +12,11 @@ dependencies = [
     "meshtastic>=2.6.2",
     "pypubsub>=4.0.3",
     "pyyaml>=6.0",
+    "pillow>=9.0.0",  # Added for LED matrix image support
 ]
 
 [project.scripts]
 nodeice-board = "main:main"
+
+[tool.setuptools]
+packages = ["nodeice_board"]

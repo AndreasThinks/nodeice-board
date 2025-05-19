@@ -13,12 +13,17 @@ Features:
 - Configurable automatic post expiration (default: 7 days)
 - Simple command-based interaction
 - Automatic prevention of multiple instances running simultaneously
+- **RGB LED Matrix display** for visual status and message notifications (optional)
 
 ## Requirements
 
 - Python 3.9 or higher
 - A Meshtastic device connected to your computer (via USB)
 - Meshtastic network with other nodes
+- For LED Matrix display (optional):
+  - Raspberry Pi (3 or 4 recommended)
+  - 32x32 RGB LED Matrix panel
+  - Adafruit RGB Matrix HAT or compatible hardware
 
 ## Installation
 
@@ -88,12 +93,14 @@ sudo ./install_service.sh  # sudo is REQUIRED
 - Create a log directory in /var/log/
 - Reload systemd daemon
 - Enable and start the systemd service
+- Set up permissions for the RGB LED Matrix (if enabled)
 
 This script will:
 - Check prerequisites
 - Install dependencies
 - Create a systemd service
 - Enable the service to start at boot
+- Optionally install and configure RGB LED Matrix support
 
 #### Automatic Updates
 
@@ -229,7 +236,15 @@ Nodeice_board:
   Short_Name: "NDB"                         # Short name for the Meshtastic device
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"  # URL for more information
   Expiration_Days: 7                        # Number of days after which posts are deleted
+  LED_Matrix:                               # RGB LED Matrix configuration (optional)
+    Enabled: true                           # Enable/disable the LED matrix
+    Hardware_Mapping: "adafruit-hat"        # Hardware mapping for your setup
+    Rows: 32                                # Number of rows in the matrix
+    Cols: 32                                # Number of columns in the matrix
+    # Additional LED matrix settings...
 ```
+
+For detailed LED Matrix configuration options, see the [LED Matrix Documentation](LED_MATRIX_README.md).
 
 ## Architecture
 
@@ -241,6 +256,8 @@ The application consists of several components:
 - **Post Expiration Handler**: Automatically removes posts older than 7 days
 - **Config**: Handles loading and accessing configuration settings
 - **Instance Management**: Prevents conflicts by ensuring only one instance runs at a time
+- **LED Matrix Display**: Provides visual status and message notifications (optional)
+- **Matrix Message Handler**: Connects the LED matrix to the message system (optional)
 
 ## Development
 
@@ -253,15 +270,22 @@ nodeice-board/
 │   ├── database.py
 │   ├── meshtastic_interface.py
 │   ├── command_handler.py
-│   └── post_expiration.py
+│   ├── post_expiration.py
+│   ├── led_matrix_display.py
+│   └── matrix_message_handler.py
 ├── main.py
 ├── install_service.sh
 ├── setup_meshtastic_device.sh
 ├── check_nodeice_status.sh
 ├── kill_previous_instances.sh
+├── test_led_matrix.py
+├── test_led_permissions.sh
 ├── pyproject.toml
 ├── config.yaml
-└── README.md
+├── README.md
+├── LED_MATRIX_README.md
+└── assets/
+    └── Mesh_Logo_Playstore.png
 ```
 
 ### Contributing

@@ -36,7 +36,17 @@ from nodeice_board.database import Database
 from nodeice_board.meshtastic_interface import MeshtasticInterface
 from nodeice_board.command_handler import CommandHandler
 from nodeice_board.post_expiration import PostExpirationHandler
-from nodeice_board.config import load_config, get_device_names, get_expiration_days
+from nodeice_board.config import load_config, get_device_names, get_expiration_days, get_led_matrix_enabled
+
+# Import LED matrix modules if available
+try:
+    from nodeice_board.led_matrix_display import LEDMatrixDisplay
+    from nodeice_board.matrix_message_handler import MatrixMessageHandler
+    LED_MATRIX_AVAILABLE = True
+except ImportError:
+    LED_MATRIX_AVAILABLE = False
+    logger = logging.getLogger("NodeiceBoard")
+    logger.warning("LED Matrix modules not available. LED Matrix display will be disabled.")
 
 
 # Set up logging
@@ -118,6 +128,8 @@ class NodeiceBoard:
         self.mesh_interface = None
         self.command_handler = None
         self.expiration_handler = None
+        self.led_matrix = None
+        self.matrix_message_handler = None
         self.running = False
         
         # Load configuration
@@ -158,6 +170,19 @@ class NodeiceBoard:
                 check_interval_hours=6  # Check for expired posts every 6 hours
             )
             
+            # Initialize LED matrix if enabled and available
+            if LED_MATRIX_AVAILABLE and get_led_matrix_enabled(self.config):
+                logger.info("Initializing LED Matrix display")
+                try:
+                    self.led_matrix = LEDMatrixDisplay(self.config, self.db)
+                    self.matrix_message_handler = MatrixMessageHandler(self.led_matrix, self.command_handler)
+                    self.matrix_message_handler.register_handlers()
+                    logger.info("LED Matrix display initialized successfully")
+                except Exception as e:
+                    logger.error(f"Error initializing LED Matrix display: {e}")
+                    self.led_matrix = None
+                    self.matrix_message_handler = None
+            
             return True
         except Exception as e:
             logger.error(f"Initialization error: {e}")
@@ -186,6 +211,12 @@ class NodeiceBoard:
             # Start the post expiration handler
             self.expiration_handler.start()
             
+            # Start the LED matrix display if available
+            if self.led_matrix:
+                logger.info("Starting LED Matrix display")
+                if not self.led_matrix.start():
+                    logger.warning("Failed to start LED Matrix display")
+            
             self.running = True
             logger.info("Nodeice Board started successfully")
             
@@ -201,6 +232,14 @@ class NodeiceBoard:
     def stop(self):
         """Stop the Nodeice Board application."""
         logger.info("Stopping Nodeice Board...")
+        
+        # Stop the LED matrix display
+        if self.led_matrix:
+            try:
+                self.led_matrix.stop()
+                logger.info("LED Matrix display stopped")
+            except Exception as e:
+                logger.error(f"Error stopping LED Matrix display: {e}")
         
         # Stop the expiration handler
         if self.expiration_handler:

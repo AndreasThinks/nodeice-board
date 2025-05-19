@@ -7,10 +7,11 @@ This guide provides detailed instructions for setting up Nodeice Board to run au
 1. [Automatic Installation](#automatic-installation)
 2. [Manual Installation](#manual-installation)
 3. [Configuration Options](#configuration-options)
-4. [Monitoring and Maintenance](#monitoring-and-maintenance)
-5. [Troubleshooting](#troubleshooting)
-6. [Updating](#updating)
-7. [Advanced Configuration](#advanced-configuration)
+4. [RGB LED Matrix Setup](#rgb-led-matrix-setup)
+5. [Monitoring and Maintenance](#monitoring-and-maintenance)
+6. [Troubleshooting](#troubleshooting)
+7. [Updating](#updating)
+8. [Advanced Configuration](#advanced-configuration)
 
 ## Automatic Installation
 
@@ -150,7 +151,150 @@ Nodeice_board:
   Short_Name: "NDB"                         # Short name for the Meshtastic device
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"  # URL for more information
   Expiration_Days: 7                        # Number of days after which posts are deleted
+  LED_Matrix:                               # RGB LED Matrix configuration (optional)
+    Enabled: true                           # Enable/disable the LED matrix
+    Hardware_Mapping: "adafruit-hat"        # Hardware mapping for your setup
+    Rows: 32                                # Number of rows in the matrix
+    Cols: 32                                # Number of columns in the matrix
+    Chain_Length: 1                         # Number of matrices chained together
+    Parallel: 1                             # Number of parallel chains
+    Brightness: 50                          # Brightness level (0-100)
+    GPIO_Slowdown: 2                        # GPIO slowdown factor for older Pis
+    Display_Mode: "standard"                # Display mode (minimal, standard, colorful)
+    Status_Cycle_Seconds: 5                 # Seconds between status screen changes
+    Message_Effect: "rainbow"               # Default effect for messages
+    Interactive: true                       # Enable button controls (if implemented)
+    Auto_Brightness: true                   # Adjust brightness based on time of day
 ```
+
+## RGB LED Matrix Setup
+
+Nodeice Board supports displaying status information and messages on a 32x32 RGB LED Matrix panel connected to your Raspberry Pi.
+
+### Hardware Requirements
+
+- Raspberry Pi (3 or 4 recommended for best performance)
+- 32x32 RGB LED Matrix panel
+- Adafruit RGB Matrix HAT or compatible hardware
+- Power supply appropriate for your LED matrix (5V, typically 2-4A depending on brightness)
+
+### Automatic Installation
+
+The RGB LED Matrix support is included in the main Nodeice Board installation script. When running `install_service.sh`, you'll be prompted to enable RGB LED Matrix support:
+
+```bash
+sudo ./install_service.sh
+```
+
+When prompted, select 'y' to install the RGB LED Matrix support. The script will:
+
+1. Install required dependencies
+2. Clone and build the rpi-rgb-led-matrix library
+3. Set up proper permissions for GPIO access
+4. Update the configuration to enable the LED matrix
+5. Make the test scripts executable
+
+### Manual Installation
+
+If you prefer to set up the RGB LED Matrix support manually:
+
+1. Install required dependencies:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y python3-dev python3-pillow libgraphicsmagick++-dev libwebp-dev
+   ```
+
+2. Clone the rpi-rgb-led-matrix repository:
+   ```bash
+   git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
+   cd rpi-rgb-led-matrix
+   make
+   cd bindings/python
+   make build-python
+   sudo make install-python
+   ```
+
+3. Set up permissions for GPIO access:
+   ```bash
+   # Add user to gpio group if it exists
+   if getent group gpio > /dev/null; then
+       sudo usermod -a -G gpio $USER
+   fi
+   
+   # Make sure /dev/gpiomem is accessible
+   if [ -e /dev/gpiomem ]; then
+       sudo chmod a+rw /dev/gpiomem
+   fi
+   
+   # Add user to i2c and spi groups if they exist
+   if getent group i2c > /dev/null; then
+       sudo usermod -a -G i2c $USER
+   fi
+   
+   if getent group spi > /dev/null; then
+       sudo usermod -a -G spi $USER
+   fi
+   ```
+
+4. Update your config.yaml to enable the LED matrix:
+   ```yaml
+   Nodeice_board:
+     # Other settings...
+     LED_Matrix:
+       Enabled: true
+       Hardware_Mapping: "adafruit-hat"
+       # Other LED matrix settings...
+   ```
+
+### Testing the LED Matrix
+
+Two test scripts are provided to verify your LED matrix setup:
+
+1. Permission Test:
+   ```bash
+   ./test_led_permissions.sh
+   ```
+   This script checks if your system is properly configured for the LED matrix.
+
+2. Display Test:
+   ```bash
+   ./test_led_matrix.py
+   ```
+   This script tests various display functions.
+
+You can test specific features with the `--test` option:
+```bash
+./test_led_matrix.py --test logo
+./test_led_matrix.py --test text
+./test_led_matrix.py --test status
+./test_led_matrix.py --test message
+```
+
+### Troubleshooting
+
+If you encounter issues with the LED matrix:
+
+1. Run the permission test script to check for configuration issues:
+   ```bash
+   ./test_led_permissions.sh
+   ```
+
+2. Verify that the RGB Matrix library is properly installed:
+   ```bash
+   python3 -c "import rgbmatrix"
+   ```
+
+3. Check the Nodeice Board logs for any errors:
+   ```bash
+   tail -f nodeice_board.log | grep "LED Matrix"
+   ```
+
+4. Verify that the LED matrix is enabled in the configuration:
+   ```bash
+   grep -A15 "LED_Matrix" config.yaml
+   ```
+
+For more detailed information about the RGB LED Matrix functionality, see the [LED Matrix Documentation](LED_MATRIX_README.md).
 
 ## Monitoring and Maintenance
 

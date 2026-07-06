@@ -24,7 +24,7 @@ Features:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/nodeice-board.git
+   git clone https://github.com/AndreasThinks/nodeice-board.git
    cd nodeice-board
    ```
 
@@ -68,6 +68,7 @@ Once the Nodeice Board server is running, other Meshtastic nodes can interact wi
 | `!unsubscribe all` | Unsubscribe from all notifications | `!unsubscribe all` |
 | `!unsubscribe <post_id>` | Unsubscribe from notifications for a specific post | `!unsubscribe 42` |
 | `!subscriptions` | List your current subscriptions | `!subscriptions` |
+| `!info` | Show board statistics (post count, next wipe, uptime) | `!info` |
 
 ### Setup as a Service on Raspberry Pi
 
@@ -95,27 +96,40 @@ This script will:
 - Create a systemd service
 - Enable the service to start at boot
 
-#### Automatic Updates
+#### RGB LED Matrix Display (optional)
 
-Nodeice Board includes an automatic update mechanism that checks for updates on the GitHub repository every 24 hours and applies them if available.
+Nodeice Board can drive an RGB LED matrix as a live visual display of board
+activity — ideal as a showpiece next to the node. It is designed for a
+32x32 HUB75 panel on an [Adafruit RGB Matrix Bonnet](https://shop.pimoroni.com/products/adafruit-rgb-matrix-bonnet-for-raspberry-pi),
+but any panel size supported by [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) works.
 
-To set up automatic updates:
+The display runs as its own service and only *reads* the board database, so
+it can be added, restarted, or removed without touching the notice board itself.
+It shows:
+
+- A rotating status card: live post count, clock, all-time post count
+- A scrolling call-to-action marquee (`!post` / `!help`) so passers-by know how to interact
+- A recent-posts ticker every ~45 seconds
+- An eye-catching ring-burst + "NEW POST" animation whenever a post or comment arrives, followed by the message scrolling across the panel
+
+Install on the Pi (compiles the matrix library, sets up a systemd service,
+and offers to disable the conflicting onboard audio):
 
 ```bash
-chmod +x install_auto_update.sh
-sudo ./install_auto_update.sh  # sudo is REQUIRED
+sudo ./install_matrix_service.sh
 ```
 
-**Why sudo is required:** This script needs root privileges to:
-- Set up a cron job for automatic updates
-- Create log directories
-- Restart the service after updates
+A matching **3D-printable case** (front bezel frame + rear component shell
+for the panel, Pi and bonnet) lives in [`case/`](case/) with STLs,
+parametric OpenSCAD source, and print/assembly instructions.
 
-This script will:
-- Make the auto_update.sh script executable
-- Set up a cron job to check for updates daily at 3 AM
-- Create necessary log directories
-- Optionally run an initial update check
+Panel size, brightness and GPIO settings live in `config.yaml` under
+`Matrix_display`. To develop or preview on a desktop without hardware:
+
+```bash
+pip install -e ".[emulator]"
+nodeice-board-matrix --emulator --db_path nodeice_board.db
+```
 
 #### Meshtastic Device Setup
 
@@ -250,18 +264,43 @@ The application consists of several components:
 nodeice-board/
 ├── nodeice_board/
 │   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
 │   ├── database.py
 │   ├── meshtastic_interface.py
 │   ├── command_handler.py
-│   └── post_expiration.py
-├── main.py
+│   ├── post_expiration.py
+│   └── matrix/            # optional RGB LED matrix display
+│       ├── main.py        # nodeice-board-matrix entry point
+│       ├── app.py         # render loop and scene switching
+│       ├── scenes.py      # idle / ticker / alert / waiting scenes
+│       ├── render.py      # palette, marquee, scrolling primitives
+│       ├── watcher.py     # read-only database poller
+│       ├── driver.py      # hardware / emulator backend loading
+│       └── fonts/         # bundled BDF pixel fonts
+├── tests/
+├── main.py                # thin wrapper around nodeice_board/main.py
 ├── install_service.sh
+├── install_matrix_service.sh
 ├── setup_meshtastic_device.sh
 ├── check_nodeice_status.sh
 ├── kill_previous_instances.sh
 ├── pyproject.toml
 ├── config.yaml
 └── README.md
+```
+
+### Running the Tests
+
+```bash
+pip install -e . pytest
+pytest
+```
+
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv run pytest
 ```
 
 ### Contributing

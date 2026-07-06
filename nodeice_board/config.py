@@ -94,6 +94,52 @@ def get_info_url(config: Dict[str, Any]) -> str:
         
     return default_url
 
+MATRIX_DEFAULTS = {
+    "rows": 32,
+    "cols": 32,
+    "chain_length": 1,
+    "parallel": 1,
+    "brightness": 60,
+    "hardware_mapping": "adafruit-hat",
+    "gpio_slowdown": 2,
+    "drop_privileges": True,
+    "poll_interval": 2.0,
+}
+
+
+def get_matrix_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get the LED matrix display configuration with defaults applied.
+
+    Reads the optional 'Matrix_display' section of the config file, e.g.:
+
+        Matrix_display:
+          Rows: 32
+          Cols: 32
+          Brightness: 60
+          Hardware_Mapping: "adafruit-hat"
+
+    Args:
+        config: The configuration dictionary.
+
+    Returns:
+        A dict with normalized lowercase keys and defaults for anything unset.
+    """
+    result = dict(MATRIX_DEFAULTS)
+
+    try:
+        section = config.get("Matrix_display") if isinstance(config, dict) else None
+        if isinstance(section, dict):
+            for key, value in section.items():
+                normalized = key.strip().lower()
+                if normalized in result and value is not None:
+                    result[normalized] = value
+    except Exception as e:
+        logger.error(f"Error reading Matrix_display config: {e}")
+
+    return result
+
+
 def get_expiration_days(config: Dict[str, Any]) -> int:
     """
     Get the post expiration days from the configuration.
@@ -112,8 +158,9 @@ def get_expiration_days(config: Dict[str, Any]) -> int:
             
             if isinstance(nodeice_config, dict) and 'Expiration_Days' in nodeice_config:
                 expiration_days = nodeice_config['Expiration_Days']
-                if isinstance(expiration_days, int) and expiration_days > 0:
-                    return expiration_days
+                # Accept ints and floats (YAML values like 7.0), but not bools
+                if isinstance(expiration_days, (int, float)) and not isinstance(expiration_days, bool) and expiration_days >= 1:
+                    return int(expiration_days)
                 else:
                     logger.warning(f"Invalid Expiration_Days value: {expiration_days}, using default of {default_days}")
     except Exception as e:

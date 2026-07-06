@@ -2,7 +2,7 @@ import re
 import time
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 from nodeice_board.database import Database
@@ -27,24 +27,27 @@ class CommandHandler:
     UNSUBSCRIBE_POST_CMD = re.compile(r'^!unsubscribe\s+(\d+)\s*$', re.IGNORECASE)
     LIST_SUBSCRIPTIONS_CMD = re.compile(r'^!subscriptions\s*$', re.IGNORECASE)
     
-    def __init__(self, database: Database, send_message_callback: Callable[[str, str], bool]):
+    def __init__(self, database: Database, send_message_callback: Callable[[str, str], bool],
+                 config: Optional[Dict[str, Any]] = None):
         """
         Initialize the command handler.
-        
+
         Args:
             database: The database instance.
             send_message_callback: Callback function to send a message.
                 Args: message (str), destination (str)
                 Returns: success (bool)
+            config: The application configuration. If None, loads config.yaml
+                from the current directory.
         """
         self.db = database
         self.send_message = send_message_callback
         self.logger = logging.getLogger("NodeiceBoard")
         self.rate_limits = {}  # Store {sender_id: last_command_time}
         self.rate_limit_seconds = 1  # Minimum seconds between commands
-        
-        # Load config to get info URL and expiration days
-        self.config = load_config()
+
+        # Use the provided config to get info URL and expiration days
+        self.config = config if config is not None else load_config()
         self.info_url = get_info_url(self.config)
         self.expiration_days = get_expiration_days(self.config)
 
@@ -83,7 +86,12 @@ class CommandHandler:
                     
             # Update last command time
             self.rate_limits[sender_id] = current_time
-                
+
+            # Prevent unbounded growth of the rate-limit table
+            if len(self.rate_limits) > 1000:
+                cutoff = current_time - 3600
+                self.rate_limits = {uid: t for uid, t in self.rate_limits.items() if t > cutoff}
+
             # Try to match different command patterns
             if CommandHandler.HELP_CMD.match(message):
                 self.logger.debug(f"Matched !help command from {sender_id}")
@@ -357,8 +365,9 @@ class CommandHandler:
                 
             # Format the post header
             author = post["author_name"] or post["author_id"]
+            # SQLite CURRENT_TIMESTAMP is UTC
             timestamp = datetime.strptime(post["created_at"], "%Y-%m-%d %H:%M:%S")
-            formatted_time = timestamp.strftime("%b %d, %Y, %I:%M %p")
+            formatted_time = timestamp.strftime("%b %d, %Y, %I:%M %p UTC")
             
             # Send post details as separate messages
             self.send_message(f"Post #{post_id}: {post['content']}", sender_id)
@@ -711,8 +720,9 @@ class CommandHandler:
             A human-readable string like "2h ago" or "3d ago".
         """
         try:
-            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-            now = datetime.now()
+            # SQLite CURRENT_TIMESTAMP is UTC, so compare against UTC now
+            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
             delta = now - timestamp
             
             seconds = delta.total_seconds()

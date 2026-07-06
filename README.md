@@ -119,6 +119,10 @@ and offers to disable the conflicting onboard audio):
 sudo ./install_matrix_service.sh
 ```
 
+A matching **3D-printable case** (front bezel frame + rear component shell
+for the panel, Pi and bonnet) lives in [`case/`](case/) with STLs,
+parametric OpenSCAD source, and print/assembly instructions.
+
 Panel size, brightness and GPIO settings live in `config.yaml` under
 `Matrix_display`. To develop or preview on a desktop without hardware:
 

@@ -112,8 +112,9 @@ def get_expiration_days(config: Dict[str, Any]) -> int:
             
             if isinstance(nodeice_config, dict) and 'Expiration_Days' in nodeice_config:
                 expiration_days = nodeice_config['Expiration_Days']
-                if isinstance(expiration_days, int) and expiration_days > 0:
-                    return expiration_days
+                # Accept ints and floats (YAML values like 7.0), but not bools
+                if isinstance(expiration_days, (int, float)) and not isinstance(expiration_days, bool) and expiration_days >= 1:
+                    return int(expiration_days)
                 else:
                     logger.warning(f"Invalid Expiration_Days value: {expiration_days}, using default of {default_days}")
     except Exception as e:

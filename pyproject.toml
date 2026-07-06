@@ -1,8 +1,9 @@
 [project]
 name = "nodeice-board"
-version = "0.1.0"
+version = "0.1.1"
 description = "Meshtastic-based notice board application"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
     "meshtastic>=2.6.2",
@@ -11,4 +12,16 @@ dependencies = [
 ]
 
 [project.scripts]
-nodeice-board = "main:main"
+nodeice-board = "nodeice_board.main:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["nodeice_board"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

@@ -24,7 +24,7 @@ Features:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/nodeice-board.git
+   git clone https://github.com/AndreasThinks/nodeice-board.git
    cd nodeice-board
    ```
 
@@ -68,6 +68,7 @@ Once the Nodeice Board server is running, other Meshtastic nodes can interact wi
 | `!unsubscribe all` | Unsubscribe from all notifications | `!unsubscribe all` |
 | `!unsubscribe <post_id>` | Unsubscribe from notifications for a specific post | `!unsubscribe 42` |
 | `!subscriptions` | List your current subscriptions | `!subscriptions` |
+| `!info` | Show board statistics (post count, next wipe, uptime) | `!info` |
 
 ### Setup as a Service on Raspberry Pi
 
@@ -94,28 +95,6 @@ This script will:
 - Install dependencies
 - Create a systemd service
 - Enable the service to start at boot
-
-#### Automatic Updates
-
-Nodeice Board includes an automatic update mechanism that checks for updates on the GitHub repository every 24 hours and applies them if available.
-
-To set up automatic updates:
-
-```bash
-chmod +x install_auto_update.sh
-sudo ./install_auto_update.sh  # sudo is REQUIRED
-```
-
-**Why sudo is required:** This script needs root privileges to:
-- Set up a cron job for automatic updates
-- Create log directories
-- Restart the service after updates
-
-This script will:
-- Make the auto_update.sh script executable
-- Set up a cron job to check for updates daily at 3 AM
-- Create necessary log directories
-- Optionally run an initial update check
 
 #### Meshtastic Device Setup
 
@@ -250,11 +229,14 @@ The application consists of several components:
 nodeice-board/
 ├── nodeice_board/
 │   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
 │   ├── database.py
 │   ├── meshtastic_interface.py
 │   ├── command_handler.py
 │   └── post_expiration.py
-├── main.py
+├── tests/
+├── main.py            # thin wrapper around nodeice_board/main.py
 ├── install_service.sh
 ├── setup_meshtastic_device.sh
 ├── check_nodeice_status.sh
@@ -262,6 +244,19 @@ nodeice-board/
 ├── pyproject.toml
 ├── config.yaml
 └── README.md
+```
+
+### Running the Tests
+
+```bash
+pip install -e . pytest
+pytest
+```
+
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv run pytest
 ```
 
 ### Contributing

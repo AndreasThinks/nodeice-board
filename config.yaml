@@ -1,5 +1,8 @@
 Nodeice_board:
-  Long_Name: "Nodice Board-Msg \"!help! for instructions\""
-  Short_Name: "N📌B"
+  # Long name shown on the mesh (Meshtastic limit: ~40 bytes)
+  Long_Name: "Nodeice Board - msg !help for info"
+  # Short name shown on the mesh (Meshtastic limit: 4 bytes, so an emoji alone uses all 4)
+  Short_Name: "NDB"
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"
+  # Number of days before posts are hidden from the board (whole days)
   Expiration_Days: 7

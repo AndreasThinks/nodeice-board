@@ -94,6 +94,52 @@ def get_info_url(config: Dict[str, Any]) -> str:
         
     return default_url
 
+MATRIX_DEFAULTS = {
+    "rows": 32,
+    "cols": 32,
+    "chain_length": 1,
+    "parallel": 1,
+    "brightness": 60,
+    "hardware_mapping": "adafruit-hat",
+    "gpio_slowdown": 2,
+    "drop_privileges": True,
+    "poll_interval": 2.0,
+}
+
+
+def get_matrix_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get the LED matrix display configuration with defaults applied.
+
+    Reads the optional 'Matrix_display' section of the config file, e.g.:
+
+        Matrix_display:
+          Rows: 32
+          Cols: 32
+          Brightness: 60
+          Hardware_Mapping: "adafruit-hat"
+
+    Args:
+        config: The configuration dictionary.
+
+    Returns:
+        A dict with normalized lowercase keys and defaults for anything unset.
+    """
+    result = dict(MATRIX_DEFAULTS)
+
+    try:
+        section = config.get("Matrix_display") if isinstance(config, dict) else None
+        if isinstance(section, dict):
+            for key, value in section.items():
+                normalized = key.strip().lower()
+                if normalized in result and value is not None:
+                    result[normalized] = value
+    except Exception as e:
+        logger.error(f"Error reading Matrix_display config: {e}")
+
+    return result
+
+
 def get_expiration_days(config: Dict[str, Any]) -> int:
     """
     Get the post expiration days from the configuration.

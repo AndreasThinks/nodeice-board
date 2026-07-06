@@ -1,6 +1,6 @@
 [project]
 name = "nodeice-board"
-version = "0.1.1"
+version = "0.2.0"
 description = "Meshtastic-based notice board application"
 readme = "README.md"
 license = { text = "MIT" }
@@ -13,13 +13,24 @@ dependencies = [
 
 [project.scripts]
 nodeice-board = "nodeice_board.main:main"
+nodeice-board-matrix = "nodeice_board.matrix.main:main"
+
+[project.optional-dependencies]
+# Desktop testing of the LED matrix display without hardware:
+#   pip install -e ".[emulator]" && nodeice-board-matrix --emulator
+emulator = [
+    "RGBMatrixEmulator>=0.11",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["nodeice_board"]
+packages = ["nodeice_board", "nodeice_board.matrix"]
+
+[tool.setuptools.package-data]
+"nodeice_board.matrix" = ["fonts/*.bdf"]
 
 [dependency-groups]
 dev = [

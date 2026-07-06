@@ -6,3 +6,13 @@ Nodeice_board:
   Info_URL: "https://github.com/AndreasThinks/nodeice-board"
   # Number of days before posts are hidden from the board (whole days)
   Expiration_Days: 7
+
+# Optional RGB LED matrix display (run with the nodeice-board-matrix command).
+# Defaults suit a 32x32 HUB75 panel on an Adafruit RGB Matrix Bonnet.
+Matrix_display:
+  Rows: 32
+  Cols: 32
+  Chain_Length: 1
+  Brightness: 60             # 0-100; 60 is comfortable indoors
+  Hardware_Mapping: "adafruit-hat"
+  GPIO_Slowdown: 2           # Raise to 3-4 on a Pi 4 if you see flicker

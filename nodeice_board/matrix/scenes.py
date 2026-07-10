@@ -30,7 +30,9 @@ from nodeice_board.matrix.render import (
 )
 from nodeice_board.matrix.watcher import NewPost, NewComment
 
-HEADER_BASELINE = 4
+# The 4x6 font's caps extend 5 rows above the baseline (CAP_HEIGHT 5),
+# so a baseline of 5 puts the wordmark exactly in rows 0-4.
+HEADER_BASELINE = 5
 ACCENT_Y = 6
 CARD_LABEL_BASELINE = 14
 CARD_VALUE_BASELINE = 23

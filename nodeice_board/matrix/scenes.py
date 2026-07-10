@@ -68,7 +68,8 @@ class RenderContext:
         if db_available:
             n = self.visible_posts
             posts = "1 post" if n == 1 else f"{n} posts"
-            text = f"DM !post <msg> to post  ·  !help for commands  ·  {posts} on the board  ·  "
+            text = (f"Meshtastic notice board  ·  DM !post <msg> to post  ·  "
+                    f"!help for commands  ·  {posts} on the board  ·  ")
         else:
             text = "waiting for the notice board database ...   "
         self.marquee.set_text(sanitize(text))

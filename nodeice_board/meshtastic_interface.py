@@ -7,6 +7,7 @@ from typing import Callable, Dict, Any, List, Optional
 from meshtastic.serial_interface import SerialInterface
 
 import meshtastic
+from meshtastic.protobuf import portnums_pb2
 from pubsub import pub
 
 
@@ -16,6 +17,11 @@ class MeshtasticInterface:
     # Meshtastic text payloads max out around 230 bytes; leave headroom for
     # the "(i/n) " chunk prefix added to multi-part messages.
     MAX_PAYLOAD_BYTES = 200
+
+    # Minimum gap between our transmissions. A LongFast packet needs 1-2s
+    # of airtime plus the ACK round-trip; sending sooner risks colliding
+    # with the recipient's ACK for the previous packet.
+    MIN_SEND_INTERVAL_S = 2.0
 
     def __init__(self, device_path: Optional[str] = None, on_message: Optional[Callable] = None):
         """
@@ -37,6 +43,9 @@ class MeshtasticInterface:
         # Keep track of processed messages to avoid duplicates
         self.processed_messages = set()
         self.processed_messages_lock = threading.Lock()
+
+        # When we last transmitted, for pacing consecutive sends
+        self._last_send_time = 0.0
 
     def connect(self, long_name: Optional[str] = None, short_name: Optional[str] = None) -> bool:
         """
@@ -172,6 +181,11 @@ class MeshtasticInterface:
                 self.logger.warning(f"Received message without sender ID: {message}")
                 return
 
+            # A text is a direct message when addressed to a specific node
+            # rather than the broadcast address (channel chatter)
+            to_id = packet.get("toId", packet.get("to"))
+            is_dm = to_id not in (None, meshtastic.BROADCAST_ADDR, meshtastic.BROADCAST_NUM)
+
             # Create a unique identifier for this message
             if message_id:
                 message_key = f"{message_id}"
@@ -193,13 +207,13 @@ class MeshtasticInterface:
                     # Remove oldest entries (assuming they're added in order)
                     self.processed_messages = set(list(self.processed_messages)[-100:])
 
-            self.logger.info(f"Message received from {from_id}: {message}")
+            self.logger.info(f"Message received from {from_id} ({'DM' if is_dm else 'broadcast'}): {message}")
 
             # Call the provided callback if available
             if self.on_message_callback:
                 self.logger.debug(f"Calling on_message_callback with message: '{message}' from {from_id}")
                 try:
-                    self.on_message_callback(message, from_id)
+                    self.on_message_callback(message, from_id, is_dm)
                     self.logger.debug(f"on_message_callback completed successfully for message: '{message}'")
                 except Exception as callback_error:
                     self.logger.error(f"Error in on_message_callback: {callback_error}")
@@ -253,6 +267,64 @@ class MeshtasticInterface:
             chunks.append(current)
         return chunks
 
+    @classmethod
+    def _pack_message_into_chunks(cls, message: str, max_bytes: int) -> List[str]:
+        """
+        Pack a message into as few chunks as possible: overlong lines are
+        split at word boundaries, then consecutive lines are packed back
+        together (newline-separated) while they fit within max_bytes.
+        Fewer chunks means fewer LoRa packets on the air.
+
+        Args:
+            message: The full message text.
+            max_bytes: Maximum UTF-8 encoded size of each chunk.
+
+        Returns:
+            A list of chunks (empty for whitespace-only input).
+        """
+        pieces = []
+        for line in message.strip().split('\n'):
+            if not line.strip():
+                continue  # Skip empty lines
+            pieces.extend(cls._split_line_into_chunks(line, max_bytes))
+
+        chunks = []
+        current = ""
+        for piece in pieces:
+            candidate = f"{current}\n{piece}" if current else piece
+            if len(candidate.encode('utf-8')) <= max_bytes:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = piece
+        if current:
+            chunks.append(current)
+        return chunks
+
+    def _pace_transmission(self):
+        """Sleep as needed so consecutive sends stay MIN_SEND_INTERVAL_S apart."""
+        wait = self._last_send_time + self.MIN_SEND_INTERVAL_S - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+
+    def _on_delivery_response(self, packet):
+        """
+        Log the routing ACK/NAK the mesh returns for an ACK-requested DM.
+
+        The confirmation may come from the destination itself or, as an
+        implicit ACK, from a node that relayed the packet onward.
+        """
+        try:
+            routing = packet.get("decoded", {}).get("routing", {})
+            error = routing.get("errorReason", "NONE")
+            origin = packet.get("fromId", packet.get("from", "?"))
+            if error == "NONE":
+                self.logger.info(f"Delivery confirmed by {origin}")
+            else:
+                self.logger.warning(f"Delivery failed ({error}) reported by {origin}")
+        except Exception as e:
+            self.logger.debug(f"Could not parse delivery response: {e}")
+
     def send_message(self, message: str, destination: Optional[str] = None) -> bool:
         """
         Send a message to a specific node or broadcast.
@@ -273,13 +345,8 @@ class MeshtasticInterface:
         try:
             self.logger.info(f"MeshtasticInterface.send_message called with message to {destination if destination else 'all'}: {message}")
 
-            # Split the message into lines, then split any long line into
-            # payload-sized chunks
-            chunks = []
-            for line in message.strip().split('\n'):
-                if not line.strip():
-                    continue  # Skip empty lines
-                chunks.extend(self._split_line_into_chunks(line, self.MAX_PAYLOAD_BYTES))
+            # Pack the message into as few payload-sized chunks as possible
+            chunks = self._pack_message_into_chunks(message, self.MAX_PAYLOAD_BYTES)
 
             if not chunks:
                 return True  # Nothing to send
@@ -295,16 +362,25 @@ class MeshtasticInterface:
                 self.logger.debug(f"Sending message part {i+1}/{len(chunks)}: {chunk_msg}")
 
                 try:
+                    self._pace_transmission()
                     if destination:
-                        # Direct message to specific node
-                        self.interface.sendText(chunk_msg, destinationId=destination)
+                        # Direct message: request an ACK so the radio
+                        # retransmits chunks that get lost on the air.
+                        # sendData rather than sendText because only it
+                        # exposes onResponseAckPermitted, without which the
+                        # delivery callback fires for errors but not ACKs.
+                        self.interface.sendData(
+                            chunk_msg.encode("utf-8"),
+                            destinationId=destination,
+                            portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP,
+                            wantAck=True,
+                            onResponse=self._on_delivery_response,
+                            onResponseAckPermitted=True,
+                        )
                     else:
                         # Broadcast message
                         self.interface.sendText(chunk_msg)
-
-                    # Add a small delay between messages to avoid flooding the network
-                    if i < len(chunks) - 1:
-                        time.sleep(0.5)
+                    self._last_send_time = time.monotonic()
 
                 except Exception as chunk_error:
                     self.logger.error(f"Failed to send message part {i+1}/{len(chunks)}: {chunk_error}")

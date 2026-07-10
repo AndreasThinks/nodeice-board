@@ -47,6 +47,17 @@ def test_help_command(handler, sender):
     assert "!list" in combined
 
 
+def test_help_essentials_fit_one_packet(handler, sender):
+    """Each help message must fit a single LoRa packet, with !post in the
+    first one, so 'how to post' survives even if later packets are lost."""
+    handler.handle_message("!help", "!user1")
+    messages = sender.messages_to("!user1")
+    assert len(messages) == 2
+    assert "!post" in messages[0]
+    for message in messages:
+        assert len(message.encode("utf-8")) <= 200
+
+
 def test_post_command(handler, sender, db):
     assert handler.handle_message("!post Lost cat in sector 7", "!user1") is True
     assert "Post #1 created" in sender.messages_to("!user1")[0]
@@ -57,9 +68,11 @@ def test_list_command(handler, sender, db):
     db.create_post("first", "!user1")
     db.create_post("second", "!user2")
     assert handler.handle_message("!list", "!user3") is True
-    combined = "\n".join(sender.messages_to("!user3"))
-    assert "first" in combined
-    assert "second" in combined
+    messages = sender.messages_to("!user3")
+    # One merged message: the interface packs it into minimal packets
+    assert len(messages) == 1
+    assert "first" in messages[0]
+    assert "second" in messages[0]
 
 
 def test_list_command_empty(handler, sender):
@@ -76,10 +89,12 @@ def test_view_command(handler, sender, db):
     post_id = db.create_post("interesting topic", "!user1", "Alice")
     db.create_comment(post_id, "nice one", "!user2", "Bob")
     assert handler.handle_message(f"!view {post_id}", "!user3") is True
-    combined = "\n".join(sender.messages_to("!user3"))
-    assert "interesting topic" in combined
-    assert "nice one" in combined
-    assert "Alice" in combined
+    messages = sender.messages_to("!user3")
+    # One merged message: the interface packs it into minimal packets
+    assert len(messages) == 1
+    assert "interesting topic" in messages[0]
+    assert "nice one" in messages[0]
+    assert "Alice" in messages[0]
 
 
 def test_view_missing_post(handler, sender):
@@ -149,9 +164,19 @@ def test_info_command(handler, sender, db):
     assert "Total messages posted: 1" in combined
 
 
-def test_unknown_command_is_ignored(handler, sender):
-    assert handler.handle_message("hello there", "!user1") is False
+def test_unknown_broadcast_is_ignored(handler, sender):
+    assert handler.handle_message("hello there", "!user1", is_dm=False) is False
     assert sender.sent == []
+
+
+def test_unknown_dm_gets_help_hint(handler, sender):
+    assert handler.handle_message("hello there", "!user1", is_dm=True) is False
+    assert "!help" in sender.messages_to("!user1")[0]
+
+
+def test_unknown_dm_hint_fits_one_packet(handler, sender):
+    handler.handle_message("hello there", "!user1", is_dm=True)
+    assert len(sender.messages_to("!user1")[0].encode("utf-8")) <= 200
 
 
 def test_empty_message_is_ignored(handler, sender):

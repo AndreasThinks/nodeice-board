@@ -51,14 +51,17 @@ class CommandHandler:
         self.info_url = get_info_url(self.config)
         self.expiration_days = get_expiration_days(self.config)
 
-    def handle_message(self, message: str, sender_id: str) -> bool:
+    def handle_message(self, message: str, sender_id: str, is_dm: bool = False) -> bool:
         """
         Handle an incoming message.
-        
+
         Args:
             message: The received message content.
             sender_id: The ID of the sender.
-            
+            is_dm: True when the message was a direct message to this node.
+                Unrecognised direct messages get a pointer to !help;
+                channel broadcasts never do.
+
         Returns:
             True if message was handled as a command, False otherwise.
         """
@@ -191,8 +194,14 @@ class CommandHandler:
                 self.logger.debug(f"Matched !subscriptions command from {sender_id}")
                 return self.handle_list_subscriptions_command(sender_id)
             
-            # If no command matched, just log it but don't respond
+            # No command matched: nudge direct messages toward !help, but
+            # stay silent on channel chatter that merely reached us
             self.logger.debug(f"No command matched for message from {sender_id}: {message}")
+            if is_dm:
+                self.send_message(
+                    "That's not a command I know - send !help to see how to use the board.",
+                    sender_id
+                )
             return False
         except Exception as e:
             self.logger.error(f"Error handling message: {e}")
@@ -222,32 +231,27 @@ class CommandHandler:
         """
         try:
             self.logger.info(f"handle_help_command called for sender {sender_id}")
-            
-            # Send introduction message first
-            intro_text = (
-                "This is a public notice board. You can post topics or leave comments.\n\n"
-                f"Learn more here: {self.info_url}"
+
+            # The essentials first, sized to fit a single LoRa packet so
+            # "how to post" always arrives even if later packets are lost
+            essentials_text = (
+                "Nodeice Board - a public notice board.\n"
+                "!post <message> - put a notice on the board\n"
+                "!list [n] - recent posts\n"
+                "!view <id> - read a post + comments\n"
+                "!comment <id> <msg> - reply to a post"
             )
-            self.send_message(intro_text, sender_id)
-            time.sleep(0.5)  # Small delay between messages
-            
-            # Format help text with one command per line for better chunking
-            help_text = (
-                "Nodeice Board Commands:\n"
-                "!post <message> - Create a new post\n"
-                "!list [n] - Show n recent posts (default: 5)\n"
-                "!view <post_id> - View a post and its comments\n"
-                "!comment <post_id> <message> - Comment on a post\n"
-                "!subscribe all - Subscribe to all new posts\n"
-                "!subscribe <post_id> - Subscribe to a specific post\n"
-                "!unsubscribe all - Unsubscribe from all notifications\n"
-                "!unsubscribe <post_id> - Unsubscribe from a specific post\n"
-                "!subscriptions - List your current subscriptions\n"
-                "!info - Show board statistics\n"
-                "!help - Show this help message"
+            self.send_message(essentials_text, sender_id)
+
+            more_text = (
+                "More commands:\n"
+                "!subscribe all|<id> - DM alerts for new posts\n"
+                "!unsubscribe all|<id>\n"
+                "!subscriptions - list yours\n"
+                "!info - board stats\n"
+                f"Guide: {self.info_url}"
             )
-            
-            result = self.send_message(help_text, sender_id)
+            result = self.send_message(more_text, sender_id)
             self.logger.debug(f"Help message sent to {sender_id}: {'Success' if result else 'Failed'}")
             return result
         except Exception as e:
@@ -317,29 +321,25 @@ class CommandHandler:
             
             if not posts:
                 return self.send_message("No posts found.", sender_id)
-                
-            # Send header as a separate message with deletion info
+
+            # Build the whole listing as one message; the interface packs
+            # it into as few LoRa packets as possible
             days_until_deletion = self.expiration_days  # Simple approximation
-            self.send_message(f"Recent posts (next deletion in {days_until_deletion} days):", sender_id)
-            time.sleep(0.5)  # Small delay between messages
-            
-            # Send each post as a separate line/message
+            lines = [f"Recent posts (next deletion in {days_until_deletion} days):"]
+
             for post in posts:
                 # Format the timestamp
                 timestamp = self._format_time_ago(post["created_at"])
-                
+
                 # Truncate content if needed
                 content = post["content"]
                 if len(content) > 30:
                     content = content[:27] + "..."
-                    
+
                 author = post["author_name"] or post["author_id"]
-                post_line = f"#{post['id']}: {content} ({author}, {timestamp})"
-                
-                self.send_message(post_line, sender_id)
-                time.sleep(0.5)  # Small delay between messages
-                
-            return True
+                lines.append(f"#{post['id']}: {content} ({author}, {timestamp})")
+
+            return self.send_message("\n".join(lines), sender_id)
         except Exception as e:
             self.logger.error(f"Error listing posts: {e}")
             error_msg = "Failed to retrieve posts. Please try again later."
@@ -369,35 +369,26 @@ class CommandHandler:
             timestamp = datetime.strptime(post["created_at"], "%Y-%m-%d %H:%M:%S")
             formatted_time = timestamp.strftime("%b %d, %Y, %I:%M %p UTC")
             
-            # Send post details as separate messages
-            self.send_message(f"Post #{post_id}: {post['content']}", sender_id)
-            time.sleep(0.5)
-            
-            self.send_message(f"By: {author}", sender_id)
-            time.sleep(0.5)
-            
-            self.send_message(f"Posted: {formatted_time}", sender_id)
-            time.sleep(0.5)
-            
-            # Get comments
+            # Build the post and its comments as one message; the interface
+            # packs it into as few LoRa packets as possible
+            lines = [
+                f"Post #{post_id}: {post['content']}",
+                f"By: {author}",
+                f"Posted: {formatted_time}",
+            ]
+
             comments = self.db.get_comments_for_post(post_id)
-            
+
             if comments:
-                self.send_message("Comments:", sender_id)
-                time.sleep(0.5)
-                
-                # Send each comment as a separate message
+                lines.append("Comments:")
                 for comment in comments:
                     comment_author = comment["author_name"] or comment["author_id"]
                     comment_time = self._format_time_ago(comment["created_at"])
-                    comment_text = f"- {comment_author} ({comment_time}): {comment['content']}"
-                    
-                    self.send_message(comment_text, sender_id)
-                    time.sleep(0.5)
+                    lines.append(f"- {comment_author} ({comment_time}): {comment['content']}")
             else:
-                self.send_message("No comments yet.", sender_id)
-                
-            return True
+                lines.append("No comments yet.")
+
+            return self.send_message("\n".join(lines), sender_id)
         except Exception as e:
             self.logger.error(f"Error viewing post: {e}")
             error_msg = "Failed to retrieve post. Please try again later."
@@ -558,26 +549,21 @@ class CommandHandler:
             
             if not subscriptions:
                 return self.send_message("You don't have any active subscriptions.", sender_id)
-                
-            # Send header as a separate message
-            self.send_message("Your subscriptions:", sender_id)
-            time.sleep(0.5)  # Small delay between messages
-            
-            # Send each subscription as a separate message
+
+            # Build the whole listing as one message; the interface packs
+            # it into as few LoRa packets as possible
+            lines = ["Your subscriptions:"]
             for sub in subscriptions:
                 if sub["all_posts"]:
-                    sub_text = "All new posts"
+                    lines.append("All new posts")
                 else:
                     # Truncate content if needed
                     content = sub["post_content"] or "Unknown post"
                     if len(content) > 30:
                         content = content[:27] + "..."
-                    sub_text = f"Post #{sub['post_id']}: {content}"
-                
-                self.send_message(sub_text, sender_id)
-                time.sleep(0.5)  # Small delay between messages
-                
-            return True
+                    lines.append(f"Post #{sub['post_id']}: {content}")
+
+            return self.send_message("\n".join(lines), sender_id)
         except Exception as e:
             self.logger.error(f"Error listing subscriptions: {e}")
             error_msg = "Failed to retrieve subscriptions. Please try again later."
@@ -614,7 +600,6 @@ class CommandHandler:
             for subscriber_id in subscribers:
                 try:
                     self.send_message(notification, subscriber_id)
-                    time.sleep(0.5)  # Small delay between messages
                 except Exception as e:
                     self.logger.error(f"Error notifying subscriber {subscriber_id}: {e}")
         except Exception as e:
@@ -650,7 +635,6 @@ class CommandHandler:
             for subscriber_id in subscribers:
                 try:
                     self.send_message(notification, subscriber_id)
-                    time.sleep(0.5)  # Small delay between messages
                 except Exception as e:
                     self.logger.error(f"Error notifying subscriber {subscriber_id}: {e}")
         except Exception as e:

@@ -5,10 +5,12 @@ import pytest
 from nodeice_board.config import get_matrix_config
 from nodeice_board.database import Database
 from nodeice_board.matrix.app import MatrixApp
-from nodeice_board.matrix.scenes import IdleScene, TickerScene, AlertScene, WaitingScene
+from nodeice_board.matrix.scenes import (
+    IdleScene, TickerScene, AlertScene, BrandScene, WaitingScene,
+)
 from nodeice_board.matrix.watcher import Stats, NewPost, RecentPosts, DbStatus
 
-from tests.matrix_fakes import FakeGraphics, FakeMatrix
+from tests.matrix_fakes import FakeCanvas, FakeGraphics, FakeMatrix
 
 
 @pytest.fixture
@@ -88,6 +90,34 @@ def test_ticker_shown_when_due(app, monkeypatch):
     app._next_ticker = 0  # Force the ticker to be due
     app._choose_scene()
     assert isinstance(app.scene, TickerScene)
+
+
+def test_brand_scene_shown_when_due(app):
+    app.events.put(DbStatus(available=True))
+    app._drain_events()
+    app._choose_scene()
+    assert isinstance(app.scene, IdleScene)
+
+    app._next_brand = 0  # Force the ident to be due
+    app._choose_scene()
+    assert isinstance(app.scene, BrandScene)
+
+
+def test_brand_scene_runs_to_completion(app):
+    scene = BrandScene(app.ctx)
+    canvas = FakeCanvas()
+
+    elapsed = 0.0
+    while not scene.done and elapsed < 30.0:
+        scene.step(1 / 30, app.ctx)
+        app.ctx.step(1 / 30)
+        scene.draw(canvas, app.ctx)
+        elapsed += 1 / 30
+
+    assert scene.done
+    assert canvas.pixels  # The logo drew mesh nodes and lines
+    drawn = " ".join(canvas.drawn_strings())
+    assert "Meshtastic" in drawn and "Nodeice Board" in drawn
 
 
 def test_full_loop_runs_headless(tmp_path):

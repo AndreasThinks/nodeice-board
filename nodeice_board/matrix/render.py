@@ -162,6 +162,18 @@ def draw_accent_line(gfx, canvas, y: int, width: int, t: float):
         canvas.SetPixel(x, y, *scale(color, 0.55))
 
 
+def draw_line(canvas, x0: float, y0: float, x1: float, y1: float,
+              color: Tuple[int, int, int], width: int, height: int):
+    """Draw a 1px line with SetPixel (clipped to the canvas)."""
+    steps = max(1, int(math.hypot(x1 - x0, y1 - y0) * 2))
+    for i in range(steps + 1):
+        t = i / steps
+        x = int(round(x0 + (x1 - x0) * t))
+        y = int(round(y0 + (y1 - y0) * t))
+        if 0 <= x < width and 0 <= y < height:
+            canvas.SetPixel(x, y, *color)
+
+
 def draw_ring(canvas, cx: float, cy: float, radius: float,
               color: Tuple[int, int, int], width: int, height: int):
     """Draw a 1px circle outline with SetPixel (clipped to the canvas)."""

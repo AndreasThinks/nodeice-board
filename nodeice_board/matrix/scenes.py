@@ -8,6 +8,7 @@ scenes based on watcher events:
 - IdleScene:    wordmark + rotating info card + call-to-action marquee
 - TickerScene:  recent posts scrolling through the card area
 - AlertScene:   ring burst -> banner -> the new post/comment scrolls twice
+- BrandScene:   periodic ident: the Meshtastic mesh-M plus the board name
 - WaitingScene: shown until the board database is reachable
 
 Layout (32px tall reference; positions are baselines):
@@ -244,6 +245,82 @@ class AlertScene(Scene):
                                   scale(AMBER, brightness), "NEW", ctx.width)
         render.draw_text_centered(ctx.gfx, canvas, ctx.font_big, 26,
                                   scale(SOFT_WHITE, brightness), self.banner_word, ctx.width)
+
+
+class BrandScene(Scene):
+    """
+    Periodic ident: the Meshtastic mesh "M" traces itself across the
+    panel node by node, holds with gently pulsing nodes, then shrinks to
+    the top while "Meshtastic Nodeice Board" scrolls through underneath.
+    """
+
+    TRACE_SECONDS = 1.4
+    HOLD_SECONDS = 2.2
+
+    # The mesh "M" as polyline vertices in a unit square (y=0 at the top)
+    LOGO_VERTICES = [
+        (0.05, 0.90), (0.28, 0.10), (0.50, 0.62), (0.72, 0.10), (0.95, 0.90),
+    ]
+
+    def __init__(self, ctx: RenderContext):
+        self._scroll = ScrollLine(ctx.font_big, ctx.width,
+                                  body=sanitize("Nodeice Board"),
+                                  prefix=sanitize("Meshtastic "),
+                                  speed_px_s=24.0)
+        self.elapsed = 0.0
+
+    @property
+    def done(self) -> bool:
+        return (self.elapsed >= self.TRACE_SECONDS + self.HOLD_SECONDS
+                and self._scroll.done)
+
+    def step(self, dt: float, ctx: RenderContext):
+        self.elapsed += dt
+        if self.elapsed >= self.TRACE_SECONDS + self.HOLD_SECONDS:
+            self._scroll.step(dt)
+
+    def draw(self, canvas, ctx: RenderContext):
+        if self.elapsed < self.TRACE_SECONDS:
+            progress = self.elapsed / self.TRACE_SECONDS
+            self._draw_logo(canvas, ctx, 3, 4, ctx.width - 7, 22, progress)
+        elif self.elapsed < self.TRACE_SECONDS + self.HOLD_SECONDS:
+            self._draw_logo(canvas, ctx, 3, 4, ctx.width - 7, 22, 1.0)
+        else:
+            # Mini logo up top, the name scrolling through the big font
+            self._draw_logo(canvas, ctx, 8, 2, ctx.width - 17, 10, 1.0)
+            self._scroll.draw(ctx.gfx, canvas, 26, SOFT_WHITE,
+                              prefix_color=MESH_GREEN)
+
+    def _draw_logo(self, canvas, ctx: RenderContext,
+                   x0: int, y0: int, w: int, h: int, progress: float):
+        """Draw the mesh-M scaled into a rect, traced up to `progress`."""
+        points = [(x0 + vx * w, y0 + vy * h) for vx, vy in self.LOGO_VERTICES]
+        lengths = [math.hypot(bx - ax, by - ay)
+                   for (ax, ay), (bx, by) in zip(points, points[1:])]
+        remaining = progress * sum(lengths)
+
+        node_color = scale(MESH_GREEN, pulse(ctx.t, period=1.8, low=0.7, high=1.0))
+        line_color = scale(MESH_GREEN, 0.55)
+
+        self._draw_node(canvas, ctx, points[0], node_color)
+        for (ax, ay), (bx, by), length in zip(points, points[1:], lengths):
+            if remaining <= 0:
+                break
+            p = min(1.0, remaining / length)
+            render.draw_line(canvas, ax, ay, ax + (bx - ax) * p, ay + (by - ay) * p,
+                             line_color, ctx.width, ctx.height)
+            if p >= 1.0:
+                self._draw_node(canvas, ctx, (bx, by), node_color)
+            remaining -= length
+
+    @staticmethod
+    def _draw_node(canvas, ctx: RenderContext, point, color):
+        """A small plus-shaped mesh node marker."""
+        x, y = int(round(point[0])), int(round(point[1]))
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+            px, py = x + dx, y + dy
+            if 0 <= px < ctx.width and 0 <= py < ctx.height:
+                canvas.SetPixel(px, py, *color)
 
 
 class WaitingScene(Scene):

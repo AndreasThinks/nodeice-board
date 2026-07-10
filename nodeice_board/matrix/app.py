@@ -14,7 +14,7 @@ from collections import deque
 from typing import Optional
 
 from nodeice_board.matrix.scenes import (
-    RenderContext, IdleScene, TickerScene, AlertScene, WaitingScene,
+    RenderContext, IdleScene, TickerScene, AlertScene, BrandScene, WaitingScene,
 )
 from nodeice_board.matrix.watcher import (
     BoardWatcher, Stats, NewPost, NewComment, RecentPosts, DbStatus,
@@ -39,6 +39,7 @@ class MatrixApp:
 
     FPS = 30
     TICKER_EVERY_SECONDS = 45.0
+    BRAND_EVERY_SECONDS = 75.0
     MAX_PENDING_ALERTS = 4
 
     def __init__(self, matrix, gfx, db_path: str, poll_interval: float = 2.0):
@@ -55,6 +56,7 @@ class MatrixApp:
         self.idle_scene = IdleScene()
         self.scene = WaitingScene()
         self._next_ticker = time.monotonic() + self.TICKER_EVERY_SECONDS
+        self._next_brand = time.monotonic() + self.BRAND_EVERY_SECONDS
         self.running = False
 
         self.ctx.update_marquee_text(db_available=False)
@@ -84,6 +86,9 @@ class MatrixApp:
     def _defer_ticker(self):
         self._next_ticker = time.monotonic() + self.TICKER_EVERY_SECONDS
 
+    def _defer_brand(self):
+        self._next_brand = time.monotonic() + self.BRAND_EVERY_SECONDS
+
     def _choose_scene(self):
         if not self.db_available:
             if not isinstance(self.scene, WaitingScene):
@@ -94,14 +99,25 @@ class MatrixApp:
         if self.alerts and not isinstance(self.scene, AlertScene):
             self.scene = AlertScene(self.ctx, self.alerts.popleft())
             self._defer_ticker()
+            self._defer_brand()
             return
 
         if self.scene.done or isinstance(self.scene, WaitingScene):
             if self.alerts:
                 self.scene = AlertScene(self.ctx, self.alerts.popleft())
                 self._defer_ticker()
+                self._defer_brand()
             else:
                 self.scene = self.idle_scene
+            return
+
+        # Periodically show the Meshtastic ident while idle. It also
+        # defers the ticker so the feature scenes stay spaced apart.
+        if (isinstance(self.scene, IdleScene)
+                and time.monotonic() >= self._next_brand):
+            self.scene = BrandScene(self.ctx)
+            self._defer_brand()
+            self._defer_ticker()
             return
 
         # Periodically show the recent-posts ticker while idle

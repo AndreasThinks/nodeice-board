@@ -254,12 +254,13 @@ class BrandScene(Scene):
     the top while "Meshtastic Nodeice Board" scrolls through underneath.
     """
 
-    TRACE_SECONDS = 1.4
+    TRACE_SECONDS = 1.6
     HOLD_SECONDS = 2.2
+    PING_SECONDS = 0.55  # Ring burst as each mesh node lights up
 
     # The mesh "M" as polyline vertices in a unit square (y=0 at the top)
     LOGO_VERTICES = [
-        (0.05, 0.90), (0.28, 0.10), (0.50, 0.62), (0.72, 0.10), (0.95, 0.90),
+        (0.06, 0.86), (0.29, 0.14), (0.50, 0.58), (0.71, 0.14), (0.94, 0.86),
     ]
 
     def __init__(self, ctx: RenderContext):
@@ -293,25 +294,52 @@ class BrandScene(Scene):
 
     def _draw_logo(self, canvas, ctx: RenderContext,
                    x0: int, y0: int, w: int, h: int, progress: float):
-        """Draw the mesh-M scaled into a rect, traced up to `progress`."""
+        """
+        Draw the mesh-M scaled into a rect, traced up to `progress`.
+
+        A white spark leads the trace, and each vertex fires a brief ring
+        "ping" (timed off self.elapsed) as the trace reaches it.
+        """
         points = [(x0 + vx * w, y0 + vy * h) for vx, vy in self.LOGO_VERTICES]
         lengths = [math.hypot(bx - ax, by - ay)
                    for (ax, ay), (bx, by) in zip(points, points[1:])]
-        remaining = progress * sum(lengths)
+        total = sum(lengths)
+        target = progress * total
 
         node_color = scale(MESH_GREEN, pulse(ctx.t, period=1.8, low=0.7, high=1.0))
-        line_color = scale(MESH_GREEN, 0.55)
+        line_color = scale(MESH_GREEN, 0.7)
 
-        self._draw_node(canvas, ctx, points[0], node_color)
+        remaining = target
+        tip = points[0]
         for (ax, ay), (bx, by), length in zip(points, points[1:], lengths):
             if remaining <= 0:
                 break
             p = min(1.0, remaining / length)
-            render.draw_line(canvas, ax, ay, ax + (bx - ax) * p, ay + (by - ay) * p,
+            tip = (ax + (bx - ax) * p, ay + (by - ay) * p)
+            render.draw_line(canvas, ax, ay, tip[0], tip[1],
                              line_color, ctx.width, ctx.height)
-            if p >= 1.0:
-                self._draw_node(canvas, ctx, (bx, by), node_color)
             remaining -= length
+
+        # Nodes and their pings, timed by when the trace reaches each vertex
+        travelled = 0.0
+        for i, point in enumerate(points):
+            if travelled > target:
+                break
+            self._draw_node(canvas, ctx, point, node_color)
+
+            ping_age = self.elapsed - (travelled / total) * self.TRACE_SECONDS
+            if 0.0 <= ping_age < self.PING_SECONDS:
+                fade = 1.0 - ping_age / self.PING_SECONDS
+                radius = 1.5 + (1.0 - fade) * 5.0
+                render.draw_ring(canvas, point[0], point[1], radius,
+                                 scale(MESH_GREEN, 0.5 * fade),
+                                 ctx.width, ctx.height)
+            if i < len(lengths):
+                travelled += lengths[i]
+
+        # A bright spark leads the trace while it is still drawing
+        if progress < 1.0:
+            canvas.SetPixel(int(round(tip[0])), int(round(tip[1])), *SOFT_WHITE)
 
     @staticmethod
     def _draw_node(canvas, ctx: RenderContext, point, color):

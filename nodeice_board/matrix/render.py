@@ -164,14 +164,35 @@ def draw_accent_line(gfx, canvas, y: int, width: int, t: float):
 
 def draw_line(canvas, x0: float, y0: float, x1: float, y1: float,
               color: Tuple[int, int, int], width: int, height: int):
-    """Draw a 1px line with SetPixel (clipped to the canvas)."""
-    steps = max(1, int(math.hypot(x1 - x0, y1 - y0) * 2))
-    for i in range(steps + 1):
-        t = i / steps
-        x = int(round(x0 + (x1 - x0) * t))
-        y = int(round(y0 + (y1 - y0) * t))
-        if 0 <= x < width and 0 <= y < height:
-            canvas.SetPixel(x, y, *color)
+    """
+    Draw an anti-aliased 1px line (Xiaolin Wu style, clipped to the canvas).
+
+    On a low-resolution LED panel a hard-stepped diagonal reads as jagged
+    stairs; splitting each step's brightness across the two nearest pixels
+    makes strokes look smooth and calm.
+    """
+    steep = abs(y1 - y0) > abs(x1 - x0)
+    if steep:
+        x0, y0, x1, y1 = y0, x0, y1, x1
+    if x0 > x1:
+        x0, x1, y0, y1 = x1, x0, y1, y0
+
+    dx = x1 - x0
+    gradient = (y1 - y0) / dx if dx else 0.0
+
+    def plot(px: int, py: int, brightness: float):
+        if steep:
+            px, py = py, px
+        if 0 <= px < width and 0 <= py < height and brightness > 0.05:
+            canvas.SetPixel(px, py, *scale(color, brightness))
+
+    y = y0
+    for x in range(int(round(x0)), int(round(x1)) + 1):
+        fy = y0 + gradient * (x - x0)
+        base = math.floor(fy)
+        frac = fy - base
+        plot(x, int(base), 1.0 - frac)
+        plot(x, int(base) + 1, frac)
 
 
 def draw_ring(canvas, cx: float, cy: float, radius: float,

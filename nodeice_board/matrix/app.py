@@ -39,7 +39,7 @@ class MatrixApp:
 
     FPS = 30
     TICKER_EVERY_SECONDS = 45.0
-    BRAND_EVERY_SECONDS = 75.0
+    BRAND_EVERY_SECONDS = 180.0
     MAX_PENDING_ALERTS = 4
 
     def __init__(self, matrix, gfx, db_path: str, poll_interval: float = 2.0):

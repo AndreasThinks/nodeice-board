@@ -34,8 +34,8 @@ python_version=$(python3 --version 2>&1 | awk '{print $2}')
 python_major=$(echo $python_version | cut -d. -f1)
 python_minor=$(echo $python_version | cut -d. -f2)
 
-if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 9 ]; }; then
-    echo -e "${RED}Error: Nodeice Board requires Python 3.9 or higher.${NC}"
+if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
+    echo -e "${RED}Error: Nodeice Board requires Python 3.10 or higher.${NC}"
     exit 1
 fi
 echo -e "Python version $python_version - ${GREEN}OK${NC}"

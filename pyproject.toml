@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Meshtastic-based notice board application"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "meshtastic>=2.7.10",
     "pypubsub>=4.0.3",

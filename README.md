@@ -16,7 +16,7 @@ Features:
 
 ## Requirements
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - A Meshtastic device connected to your computer (via USB)
 - Meshtastic network with other nodes
 

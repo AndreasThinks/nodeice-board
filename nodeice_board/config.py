@@ -103,6 +103,11 @@ MATRIX_DEFAULTS = {
     "hardware_mapping": "adafruit-hat",
     "gpio_slowdown": 2,
     "drop_privileges": True,
+    # User/group to drop to after hardware init. None means "the owner of
+    # the working directory", which keeps the project files readable; the
+    # library's own default (daemon) usually cannot read them.
+    "drop_priv_user": None,
+    "drop_priv_group": None,
     "poll_interval": 2.0,
 }
 

@@ -8,6 +8,7 @@ installer script) and falls back to the pip-installable
 """
 
 import logging
+import os
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("NodeiceMatrix")
@@ -76,6 +77,16 @@ def create_matrix(matrix_config: Dict[str, Any], prefer_emulator: bool = False,
     # The bonnet cannot generate hardware PWM without the GPIO4-GPIO18 solder
     # jumper mod; drop_privileges stays on (the library handles root for us).
     options.drop_privileges = matrix_config["drop_privileges"]
+
+    # The library drops to the "daemon" user by default, which typically
+    # cannot read the project directory (fonts, database). Drop to the
+    # configured user instead, defaulting to the working directory's owner.
+    if matrix_config["drop_privileges"] and hasattr(options, "drop_priv_user"):
+        cwd_stat = os.stat(os.getcwd())
+        priv_user = matrix_config["drop_priv_user"] or str(cwd_stat.st_uid)
+        priv_group = matrix_config["drop_priv_group"] or str(cwd_stat.st_gid)
+        options.drop_priv_user = str(priv_user)
+        options.drop_priv_group = str(priv_group)
 
     matrix = RGBMatrix(options=options)
     return matrix, graphics, is_emulator

@@ -51,18 +51,19 @@ EOF
 fi
 
 # --- The rgbmatrix Python bindings ------------------------------------------
-# These must be compiled from source (they are not on PyPI).
+# These must be compiled from source (they are not on PyPI). As of Feb 2026
+# upstream builds this with scikit-build-core/cmake via pip rather than the
+# old `make build-python` / `make install-python` targets.
 if python3 -c "import rgbmatrix" 2>/dev/null; then
   echo -e "rgbmatrix Python bindings - ${GREEN}already installed${NC}"
 else
   echo -e "${YELLOW}Building the rpi-rgb-led-matrix Python bindings...${NC}"
   apt-get update
-  apt-get install -y git make gcc g++ python3-dev python3-pillow cython3
+  apt-get install -y git cmake gcc g++ python3-dev python3-pillow cython3
 
   BUILD_DIR=$(mktemp -d)
   git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git "$BUILD_DIR"
-  make -C "$BUILD_DIR" build-python PYTHON="$(which python3)"
-  make -C "$BUILD_DIR" install-python PYTHON="$(which python3)"
+  python3 -m pip install --break-system-packages "$BUILD_DIR"
   rm -rf "$BUILD_DIR"
 
   python3 -c "import rgbmatrix" || {

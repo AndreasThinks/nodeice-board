@@ -23,6 +23,9 @@ set -euo pipefail
 
 REPO_URL="https://github.com/AndreasThinks/nodeice-board.git"
 MATRIX_LIB_URL="https://github.com/hzeller/rpi-rgb-led-matrix.git"
+# Pillow release whose C headers are used to compile the rgbmatrix bindings
+# (see fetch_pillow_headers below). Any recent release works.
+PILLOW_HEADERS_VERSION="12.3.0"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -32,6 +35,28 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}$*${NC}"; }
 warn()  { echo -e "${YELLOW}$*${NC}"; }
 fail()  { echo -e "${RED}$*${NC}" >&2; exit 1; }
+
+# The rgbmatrix bindings compile a small Pillow shim that includes Pillow's
+# private C header (Imaging.h). That header only ships in Pillow's *source*
+# tarball -- not in wheels or apt packages -- so the build cannot find it on
+# its own. Download the sdist and extract just the libImaging headers.
+# (Pillow is not needed at runtime: the display never hands PIL images to
+# the matrix.)
+fetch_pillow_headers() {
+    local dest="$1" version="$2"
+    local tarball="$dest/pillow-src.tar.gz" name
+    mkdir -p "$dest"
+    # Releases before 10.3 spell the sdist "Pillow-x.y.z", newer ones "pillow-x.y.z".
+    for name in "pillow-$version" "Pillow-$version"; do
+        if curl -fsL -o "$tarball" "https://pypi.org/packages/source/p/pillow/$name.tar.gz"; then
+            tar -xzf "$tarball" -C "$dest" --strip-components=3 \
+                --wildcards "*illow-$version/src/libImaging/*.h"
+            rm -f "$tarball"
+            return 0
+        fi
+    done
+    return 1
+}
 
 usage() {
     cat << 'EOF'
@@ -144,8 +169,15 @@ main() {
     if [ -f "$PROJECT_DIR/pyproject.toml" ]; then
         info "Using existing checkout at $PROJECT_DIR"
         if [ -d "$PROJECT_DIR/.git" ]; then
-            sudo -u "$TARGET_USER" -H git -C "$PROJECT_DIR" pull --ff-only 2>/dev/null \
-                || warn "Could not fast-forward $PROJECT_DIR; continuing with the current checkout."
+            info "Updating to the latest $BRANCH..."
+            if sudo -u "$TARGET_USER" -H git -C "$PROJECT_DIR" fetch origin "$BRANCH" \
+                && sudo -u "$TARGET_USER" -H git -C "$PROJECT_DIR" checkout "$BRANCH" \
+                && sudo -u "$TARGET_USER" -H git -C "$PROJECT_DIR" merge --ff-only "origin/$BRANCH"; then
+                info "Checkout updated to origin/$BRANCH."
+            else
+                warn "Could not update $PROJECT_DIR to origin/$BRANCH (local changes or"
+                warn "diverged history?); continuing with the checkout as it is."
+            fi
         fi
     else
         info "Cloning nodeice-board (branch: $BRANCH) to $PROJECT_DIR..."
@@ -200,7 +232,9 @@ EOF
             BUILD_DIR=$(mktemp -d)
             chown "$TARGET_USER" "$BUILD_DIR"
             if sudo -u "$TARGET_USER" -H git clone --depth 1 "$MATRIX_LIB_URL" "$BUILD_DIR/rpi-rgb-led-matrix" \
-                && sudo -u "$TARGET_USER" -H "$UV_BIN" pip install --python "$VENV_PYTHON" "$BUILD_DIR/rpi-rgb-led-matrix" \
+                && fetch_pillow_headers "$BUILD_DIR/pillow-headers" "$PILLOW_HEADERS_VERSION" \
+                && sudo -u "$TARGET_USER" -H env C_INCLUDE_PATH="$BUILD_DIR/pillow-headers" \
+                    "$UV_BIN" pip install --python "$VENV_PYTHON" "$BUILD_DIR/rpi-rgb-led-matrix" \
                 && "$VENV_PYTHON" -c "import rgbmatrix" 2>/dev/null; then
                 info "rgbmatrix Python bindings - installed"
             else

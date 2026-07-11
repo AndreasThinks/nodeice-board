@@ -59,11 +59,29 @@ if python3 -c "import rgbmatrix" 2>/dev/null; then
 else
   echo -e "${YELLOW}Building the rpi-rgb-led-matrix Python bindings...${NC}"
   apt-get update
-  apt-get install -y git cmake gcc g++ python3-dev python3-pillow cython3
+  apt-get install -y git curl cmake gcc g++ python3-dev python3-pillow cython3
 
   BUILD_DIR=$(mktemp -d)
-  git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git "$BUILD_DIR"
-  python3 -m pip install --break-system-packages "$BUILD_DIR"
+  git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git "$BUILD_DIR/rpi-rgb-led-matrix"
+
+  # The bindings compile a Pillow shim that includes Pillow's private C
+  # header (Imaging.h). It only ships in Pillow's source tarball -- not in
+  # wheels or apt packages -- so fetch the headers that match the installed
+  # Pillow and put them on the compiler's include path.
+  PILLOW_VERSION=$(python3 -c "import PIL; print(PIL.__version__)" 2>/dev/null || echo "12.3.0")
+  PILLOW_HEADERS="$BUILD_DIR/pillow-headers"
+  mkdir -p "$PILLOW_HEADERS"
+  # Releases before 10.3 spell the sdist "Pillow-x.y.z", newer ones "pillow-x.y.z".
+  for name in "pillow-$PILLOW_VERSION" "Pillow-$PILLOW_VERSION"; do
+    if curl -fsL -o "$PILLOW_HEADERS/src.tar.gz" "https://pypi.org/packages/source/p/pillow/$name.tar.gz"; then
+      tar -xzf "$PILLOW_HEADERS/src.tar.gz" -C "$PILLOW_HEADERS" --strip-components=3 \
+          --wildcards "*illow-$PILLOW_VERSION/src/libImaging/*.h"
+      rm -f "$PILLOW_HEADERS/src.tar.gz"
+      break
+    fi
+  done
+
+  C_INCLUDE_PATH="$PILLOW_HEADERS" python3 -m pip install --break-system-packages "$BUILD_DIR/rpi-rgb-led-matrix"
   rm -rf "$BUILD_DIR"
 
   python3 -c "import rgbmatrix" || {

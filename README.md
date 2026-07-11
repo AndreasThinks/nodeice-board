@@ -22,13 +22,56 @@ Features:
 
 ## Installation
 
+### One-Command Raspberry Pi Install (Recommended)
+
+On a Raspberry Pi, a single command installs everything: [uv](https://docs.astral.sh/uv/), the repository, the notice board service, and the RGB LED matrix display service:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash
+```
+
+The script is non-interactive, so you can run it remotely over SSH in one shot. It:
+
+- Installs system packages (git, build tools for the matrix library)
+- Installs uv for your user if it isn't already installed
+- Clones the repository to `~/nodeice-board` (or updates an existing checkout)
+- Creates the Python environment from the lockfile with `uv sync`
+- Compiles the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python bindings into the environment
+- Disables onboard audio (it conflicts with the matrix hardware; requires a reboot)
+- Adds your user to the `dialout` group for Meshtastic USB access
+- Installs, enables, and starts the `nodeice-board` and `nodeice-matrix` systemd services
+
+Options can be passed after `-s --`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash -s -- --no-matrix
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dir DIR` | Install location (default: `~/nodeice-board`) |
+| `--user USER` | User to own the install and run the service (default: the sudo user) |
+| `--branch NAME` | Git branch to install (default: `main`) |
+| `--no-matrix` | Skip the RGB LED matrix display |
+| `--no-start` | Install and enable the services but don't start them now |
+| `--keep-audio` | Leave onboard audio enabled (matrix display will glitch) |
+
+If the script disabled onboard audio, reboot afterwards (`sudo reboot`) — the matrix display starts automatically after the reboot.
+
+### Manual Installation
+
 1. Clone this repository:
    ```bash
    git clone https://github.com/AndreasThinks/nodeice-board.git
    cd nodeice-board
    ```
 
-2. Install the package and dependencies:
+2. Install the package and dependencies, either with [uv](https://docs.astral.sh/uv/):
+   ```bash
+   uv sync
+   ```
+
+   or with pip:
    ```bash
    pip install -e .
    ```
@@ -74,9 +117,17 @@ Once the Nodeice Board server is running, other Meshtastic nodes can interact wi
 
 For detailed instructions on setting up Nodeice Board to run automatically at boot on a Raspberry Pi, see the [Raspberry Pi Setup Guide](raspberry_pi_setup.md).
 
-#### Quick Setup
+#### One-Command Setup
 
-Use the provided installation script:
+The easiest path is the all-in-one installer described in [Installation](#one-command-raspberry-pi-install-recommended) above — it installs uv, both services, and the matrix display in a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash
+```
+
+#### Quick Setup (board service only)
+
+Alternatively, use the standalone service installation script:
 
 ```bash
 chmod +x install_service.sh
@@ -112,8 +163,10 @@ It shows:
 - A recent-posts ticker every ~45 seconds
 - An eye-catching ring-burst + "NEW POST" animation whenever a post or comment arrives, followed by the message scrolling across the panel
 
-Install on the Pi (compiles the matrix library, sets up a systemd service,
-and offers to disable the conflicting onboard audio):
+The [one-command installer](#one-command-raspberry-pi-install-recommended)
+sets the display up automatically. To install it separately (compiles the
+matrix library, sets up a systemd service, and offers to disable the
+conflicting onboard audio):
 
 ```bash
 sudo ./install_matrix_service.sh

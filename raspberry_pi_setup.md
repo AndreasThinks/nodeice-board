@@ -4,13 +4,63 @@ This guide provides detailed instructions for setting up Nodeice Board to run au
 
 ## Table of Contents
 
-1. [Automatic Installation](#automatic-installation)
-2. [Manual Installation](#manual-installation)
-3. [Configuration Options](#configuration-options)
-4. [Monitoring and Maintenance](#monitoring-and-maintenance)
-5. [Troubleshooting](#troubleshooting)
-6. [Updating](#updating)
-7. [Advanced Configuration](#advanced-configuration)
+1. [One-Command Installation](#one-command-installation)
+2. [Automatic Installation](#automatic-installation)
+3. [Manual Installation](#manual-installation)
+4. [Configuration Options](#configuration-options)
+5. [Monitoring and Maintenance](#monitoring-and-maintenance)
+6. [Troubleshooting](#troubleshooting)
+7. [Updating](#updating)
+8. [Advanced Configuration](#advanced-configuration)
+
+## One-Command Installation
+
+The fastest way to get a fresh Raspberry Pi running is the all-in-one installer. Run this single command (e.g. over SSH):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash
+```
+
+It is completely non-interactive and handles everything:
+
+- Installs system packages (git, curl, build tools for the matrix library)
+- Installs [uv](https://docs.astral.sh/uv/) for your user if it isn't already installed
+- Clones the repository to `~/nodeice-board` (or reuses/updates an existing checkout — you can also run `sudo ./setup_pi.sh` from inside a checkout)
+- Creates the Python environment from the committed lockfile with `uv sync --frozen`
+- Compiles the [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python bindings into that environment for the RGB LED matrix display
+- Disables the Pi's onboard audio, which conflicts with the matrix hardware (this requires a reboot)
+- Adds your user to the `dialout` group so the service can talk to the Meshtastic device over USB
+- Creates, enables, and starts the `nodeice-board.service` and `nodeice-matrix.service` systemd services
+
+Options go after `-s --`:
+
+```bash
+# Board only, no LED matrix display:
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash -s -- --no-matrix
+
+# Install a specific branch into a specific directory:
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash -s -- --branch main --dir /opt/nodeice-board
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dir DIR` | Install location (default: `~/nodeice-board`) |
+| `--user USER` | User to own the install and run the board service (default: the sudo user) |
+| `--branch NAME` | Git branch to install (default: `main`) |
+| `--no-matrix` | Skip the RGB LED matrix display entirely |
+| `--no-start` | Install and enable the services but don't start them now |
+| `--keep-audio` | Leave onboard audio enabled (the matrix display will glitch) |
+
+After the script finishes:
+
+1. If it disabled onboard audio, reboot: `sudo reboot`. The matrix display starts automatically after the reboot.
+2. Check the services are running:
+   ```bash
+   sudo systemctl status nodeice-board.service
+   sudo systemctl status nodeice-matrix.service
+   ```
+
+Note: the services run Python from the uv-managed virtual environment at `<install dir>/.venv`, so the update and troubleshooting examples below that reference `venv/bin/python` become `.venv/bin/python` for installs done this way, and `pip install -e .` becomes `uv sync`.
 
 ## Automatic Installation
 

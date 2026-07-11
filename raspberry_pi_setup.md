@@ -62,6 +62,8 @@ After the script finishes:
 
 Note: the services run Python from the uv-managed virtual environment at `<install dir>/.venv`, so the update and troubleshooting examples below that reference `venv/bin/python` become `.venv/bin/python` for installs done this way, and `pip install -e .` becomes `uv sync`.
 
+The installer is safe to re-run at any time: when it finds an existing checkout it fetches and fast-forwards it to the latest version of the requested branch, re-syncs the Python environment, and restarts the services. Re-running is also the easiest way to update, or to retry after a failed step (for example if the matrix bindings failed to build).
+
 ## Automatic Installation
 
 For a quick and easy setup, use the provided installation script:
@@ -289,6 +291,18 @@ Add the following content:
    source venv/bin/activate
    python main.py  # no sudo needed for testing
    ```
+
+### Matrix Display Bindings Fail to Build (`Imaging.h: No such file or directory`)
+
+The [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) Python bindings compile a small Pillow shim that needs Pillow's private C header `Imaging.h`. That header only ships in Pillow's *source* tarball — not in wheels or apt packages — so the build fails with `fatal error: Imaging.h: No such file or directory` when the headers aren't supplied.
+
+Both `setup_pi.sh` and `install_matrix_service.sh` handle this automatically: they download the Pillow source tarball from PyPI, extract the `libImaging` headers, and point the compiler at them. If you hit this error, update to the latest version of the scripts and re-run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndreasThinks/nodeice-board/main/setup_pi.sh | sudo bash
+```
+
+(Re-running is safe — it updates the checkout and picks up where it left off. If the matrix bindings failed to build on a previous run, the `nodeice-matrix` service was skipped; a successful re-run installs it.)
 
 ### USB Device Permission Issues
 

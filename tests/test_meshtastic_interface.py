@@ -12,6 +12,8 @@ def make_interface(on_message=None):
     """Build a MeshtasticInterface with a mocked serial connection."""
     mesh = MeshtasticInterface(on_message=on_message)
     mesh.interface = MagicMock()
+    mesh.interface.nodes = {}
+    mesh.interface.nodesByNum = {}
     return mesh
 
 
@@ -115,27 +117,36 @@ class TestOnMessage:
     @staticmethod
     def collector():
         received = []
-        return received, lambda msg, sender, is_dm: received.append((msg, sender, is_dm))
+        return received, lambda msg, sender, is_dm, name: received.append(
+            (msg, sender, is_dm, name))
 
     def test_direct_message_dispatched_as_dm(self):
         received, callback = self.collector()
         mesh = make_interface(on_message=callback)
         packet = {"id": 1, "decoded": {"text": "!help"}, "fromId": "!node1", "toId": "!ourboard"}
         mesh.on_message(packet)
-        assert received == [("!help", "!node1", True)]
+        assert received == [("!help", "!node1", True, None)]
 
     def test_broadcast_dispatched_as_not_dm(self):
         received, callback = self.collector()
         mesh = make_interface(on_message=callback)
         packet = {"id": 1, "decoded": {"text": "hello all"}, "fromId": "!node1", "toId": "^all"}
         mesh.on_message(packet)
-        assert received == [("hello all", "!node1", False)]
+        assert received == [("hello all", "!node1", False, None)]
+
+    def test_sender_long_name_resolved_from_node_db(self):
+        received, callback = self.collector()
+        mesh = make_interface(on_message=callback)
+        mesh.interface.nodes = {"!node1": {"user": {"longName": "Alice's Node"}}}
+        packet = {"id": 1, "decoded": {"text": "!help"}, "fromId": "!node1", "toId": "!ourboard"}
+        mesh.on_message(packet)
+        assert received == [("!help", "!node1", True, "Alice's Node")]
 
     def test_packet_without_to_field_treated_as_broadcast(self):
         received, callback = self.collector()
         mesh = make_interface(on_message=callback)
         mesh.on_message({"id": 1, "decoded": {"text": "!help"}, "fromId": "!node1"})
-        assert received == [("!help", "!node1", False)]
+        assert received == [("!help", "!node1", False, None)]
 
     def test_duplicate_packet_ignored(self):
         received, callback = self.collector()
@@ -162,7 +173,41 @@ class TestOnMessage:
         mesh = make_interface(on_message=callback)
         packet = {"id": 4, "decoded": {"payload": "!list".encode("utf-8")}, "fromId": "!node2"}
         mesh.on_message(packet)
-        assert received == [("!list", "!node2", False)]
+        assert received == [("!list", "!node2", False, None)]
+
+
+class TestGetNodeName:
+    def test_long_name_preferred(self):
+        mesh = make_interface()
+        mesh.interface.nodes = {
+            "!node1": {"user": {"longName": "Alice's Node", "shortName": "ALCE"}}
+        }
+        assert mesh.get_node_name("!node1") == "Alice's Node"
+
+    def test_falls_back_to_short_name(self):
+        mesh = make_interface()
+        mesh.interface.nodes = {"!node1": {"user": {"shortName": "ALCE"}}}
+        assert mesh.get_node_name("!node1") == "ALCE"
+
+    def test_unknown_node_returns_none(self):
+        mesh = make_interface()
+        mesh.interface.nodes = {}
+        assert mesh.get_node_name("!stranger") is None
+
+    def test_blank_name_returns_none(self):
+        mesh = make_interface()
+        mesh.interface.nodes = {"!node1": {"user": {"longName": "  "}}}
+        assert mesh.get_node_name("!node1") is None
+
+    def test_numeric_id_resolved_via_nodes_by_num(self):
+        mesh = make_interface()
+        mesh.interface.nodes = {}
+        mesh.interface.nodesByNum = {123456: {"user": {"longName": "Bob's Node"}}}
+        assert mesh.get_node_name("123456") == "Bob's Node"
+
+    def test_not_connected_returns_none(self):
+        mesh = MeshtasticInterface()
+        assert mesh.get_node_name("!node1") is None
 
 
 def test_connection_lost_marks_interface_dead():

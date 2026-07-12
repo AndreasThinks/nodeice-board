@@ -233,7 +233,8 @@ class NodeiceBoard:
         self.running = False
         logger.info("Nodeice Board stopped")
 
-    def on_message_received(self, message: str, sender_id: str, is_dm: bool = False):
+    def on_message_received(self, message: str, sender_id: str, is_dm: bool = False,
+                            sender_name: Optional[str] = None):
         """
         Handle received Meshtastic messages.
 
@@ -242,6 +243,8 @@ class NodeiceBoard:
             sender_id: The ID of the sender.
             is_dm: True when the message was a direct message to this node,
                 False for channel broadcasts.
+            sender_name: The sender's human-readable name from the node
+                database, if known.
         """
         try:
             logger.info(f"NodeiceBoard.on_message_received called with message from {sender_id}: {message}")
@@ -270,7 +273,8 @@ class NodeiceBoard:
 
                 # Handle the message
                 logger.debug(f"Passing message to command_handler.handle_message: '{message}'")
-                result = self.command_handler.handle_message(message, sender_id, is_dm=is_dm)
+                result = self.command_handler.handle_message(message, sender_id, is_dm=is_dm,
+                                                             sender_name=sender_name)
                 logger.info(f"Command handling result: {'Success' if result else 'Failed'}")
             else:
                 logger.error("Command handler not initialized")

@@ -30,6 +30,23 @@ def scale(color: Tuple[int, int, int], factor: float) -> Tuple[int, int, int]:
     return tuple(int(c * factor) for c in color)
 
 
+GAMMA = 2.2
+
+
+def fade(color: Tuple[int, int, int], factor: float) -> Tuple[int, int, int]:
+    """
+    Scale a color's brightness perceptually, for animated fades.
+
+    LED output is roughly linear in drive level but the eye is not: a
+    linearly-scaled fade appears to hang near full brightness and then
+    snap off. Running the factor through a gamma curve makes pulses,
+    crossfades and ring trails read as smooth, continuous motion. Use
+    plain `scale` for hand-tuned static dim levels.
+    """
+    factor = max(0.0, min(1.0, factor))
+    return scale(color, factor ** GAMMA)
+
+
 def lerp(a: Tuple[int, int, int], b: Tuple[int, int, int], t: float) -> Tuple[int, int, int]:
     """Linearly interpolate between two colors, t in 0..1."""
     t = max(0.0, min(1.0, t))
@@ -72,6 +89,10 @@ class Marquee:
     loop has no visible jump. Text can be swapped at any time without
     resetting the scroll position, which keeps the motion calm when the
     stats it displays are refreshed.
+
+    The line is a sequence of (text, color) segments so key tokens (the
+    !post / !help commands) can be highlighted; a segment color of None
+    uses the default color passed to draw().
     """
 
     def __init__(self, font, width: int, speed_px_s: float = 13.0, gap_px: int = 14):
@@ -80,13 +101,22 @@ class Marquee:
         self.speed = speed_px_s
         self.gap = gap_px
         self.text = ""
+        self.segments = []
+        self._seg_px = []
         self._text_px = 0
         self.offset = 0.0
 
     def set_text(self, text: str):
-        if text != self.text:
-            self.text = text
-            self._text_px = text_width(self.font, text)
+        self.set_segments([(text, None)])
+
+    def set_segments(self, segments):
+        segments = [(text, color) for text, color in segments if text]
+        if segments == self.segments:
+            return
+        self.segments = segments
+        self.text = "".join(text for text, _ in segments)
+        self._seg_px = [text_width(self.font, text) for text, _ in segments]
+        self._text_px = sum(self._seg_px)
 
     def step(self, dt: float):
         if self._text_px <= 0:
@@ -100,7 +130,11 @@ class Marquee:
         x = -int(self.offset)
         # Draw enough copies to cover the panel regardless of text length
         while x < self.width:
-            draw_text(gfx, canvas, self.font, x, baseline_y, color, self.text)
+            seg_x = x
+            for (text, seg_color), seg_px in zip(self.segments, self._seg_px):
+                draw_text(gfx, canvas, self.font, seg_x, baseline_y,
+                          seg_color or color, text)
+                seg_x += seg_px
             x += span
 
 
@@ -108,22 +142,22 @@ class ScrollLine:
     """
     A one-shot scroller: text enters from the right and exits left.
 
-    Supports an optional colored prefix (e.g. an amber "#42 ") that moves
-    together with the body text. `done` becomes True after `passes`
-    complete traversals.
+    The line is a sequence of (text, color) segments drawn back to back,
+    so e.g. an amber "#42 " id, white content and green author name move
+    together as one line. `done` becomes True after `passes` complete
+    traversals.
     """
 
-    def __init__(self, font, width: int, body: str, prefix: str = "",
+    def __init__(self, font, width: int, segments,
                  speed_px_s: float = 26.0, passes: int = 1):
         self.font = font
         self.width = width
-        self.body = body
-        self.prefix = prefix
+        self.segments = [(text, color) for text, color in segments if text]
         self.speed = speed_px_s
         self.passes = passes
         self.completed = 0
-        self._prefix_px = text_width(font, prefix) if prefix else 0
-        self._total_px = self._prefix_px + text_width(font, body)
+        self._seg_px = [text_width(font, text) for text, _ in self.segments]
+        self._total_px = sum(self._seg_px)
         self.x = float(width)
 
     @property
@@ -139,15 +173,13 @@ class ScrollLine:
             if not self.done:
                 self.x = float(self.width)
 
-    def draw(self, gfx, canvas, baseline_y: int,
-             body_color: Tuple[int, int, int],
-             prefix_color: Tuple[int, int, int] = AMBER):
+    def draw(self, gfx, canvas, baseline_y: int):
         if self.done:
             return
         x = int(self.x)
-        if self.prefix:
-            draw_text(gfx, canvas, self.font, x, baseline_y, prefix_color, self.prefix)
-        draw_text(gfx, canvas, self.font, x + self._prefix_px, baseline_y, body_color, self.body)
+        for (text, color), seg_px in zip(self.segments, self._seg_px):
+            draw_text(gfx, canvas, self.font, x, baseline_y, color, text)
+            x += seg_px
 
 
 def draw_accent_line(gfx, canvas, y: int, width: int, t: float):
@@ -210,8 +242,12 @@ def draw_ring(canvas, cx: float, cy: float, radius: float,
 
 
 def ellipsize(text: str, max_chars: int) -> str:
-    """Trim long content so a scroll pass stays a sensible length."""
+    """Trim long content so a scroll pass stays a sensible length.
+
+    Uses "..." rather than the single "…" character: the ellipsis is not
+    in Latin-1, so it would come out of sanitize() as "?" on the panel.
+    """
     text = " ".join(text.split())  # Collapse newlines/whitespace runs
     if len(text) <= max_chars:
         return text
-    return text[:max_chars - 1].rstrip() + "…"
+    return text[:max_chars - 3].rstrip() + "..."

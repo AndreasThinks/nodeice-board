@@ -102,6 +102,31 @@ def test_view_missing_post(handler, sender):
     assert "not found" in sender.messages_to("!user1")[0]
 
 
+def test_post_stores_sender_name(handler, db):
+    handler.handle_message("!post found a dog", "!user1", sender_name="Alice's Node")
+    assert db.get_post(1)["author_name"] == "Alice's Node"
+
+
+def test_list_shows_sender_name_instead_of_node_id(handler, sender):
+    handler.handle_message("!post found a dog", "!user1", sender_name="Alice's Node")
+    handler.handle_message("!list", "!user2")
+    listing = sender.messages_to("!user2")[0]
+    assert "Alice's Node" in listing
+    assert "!user1" not in listing
+
+
+def test_list_falls_back_to_node_id_without_name(handler, sender):
+    handler.handle_message("!post found a dog", "!user1")
+    handler.handle_message("!list", "!user2")
+    assert "!user1" in sender.messages_to("!user2")[0]
+
+
+def test_comment_stores_sender_name(handler, db):
+    post_id = db.create_post("a post", "!user1")
+    handler.handle_message(f"!comment {post_id} me too", "!user2", sender_name="Bob's Node")
+    assert db.get_comments_for_post(post_id)[0]["author_name"] == "Bob's Node"
+
+
 def test_comment_command(handler, sender, db):
     post_id = db.create_post("a post", "!user1")
     assert handler.handle_message(f"!comment {post_id} I agree", "!user2") is True

@@ -26,8 +26,8 @@ from typing import List, Optional
 
 from nodeice_board.matrix import render
 from nodeice_board.matrix.render import (
-    MESH_GREEN, AMBER, SOFT_WHITE, DIM_GREY, NIGHT_GREEN,
-    Marquee, ScrollLine, scale, pulse, ellipsize,
+    MESH_GREEN, TEAL, AMBER, SOFT_WHITE, DIM_GREY,
+    Marquee, ScrollLine, scale, fade, pulse, ellipsize,
 )
 from nodeice_board.matrix.watcher import NewPost, NewComment
 
@@ -69,11 +69,19 @@ class RenderContext:
         if db_available:
             n = self.visible_posts
             posts = "1 post" if n == 1 else f"{n} posts"
-            text = (f"Meshtastic notice board  ·  DM !post <msg> to post  ·  "
-                    f"!help for commands  ·  {posts} on the board  ·  ")
+            # The commands are the call to action, so they get color while
+            # the surrounding text stays in the default muted grey
+            command = scale(MESH_GREEN, 0.7)
+            segments = [
+                ("Meshtastic notice board  ·  DM ", None),
+                ("!post <msg>", command),
+                (" to post  ·  ", None),
+                ("!help", command),
+                (f" for commands  ·  {posts} on the board  ·  ", None),
+            ]
         else:
-            text = "waiting for the notice board database ...   "
-        self.marquee.set_text(sanitize(text))
+            segments = [("waiting for the notice board database ...   ", None)]
+        self.marquee.set_segments([(sanitize(text), color) for text, color in segments])
 
 
 def draw_chrome(canvas, ctx: RenderContext):
@@ -86,11 +94,12 @@ def draw_chrome(canvas, ctx: RenderContext):
 
 def draw_card(canvas, ctx: RenderContext, label: str, value: str,
               color, brightness: float = 1.0):
-    """A label + value card in the middle area."""
+    """A label + value card in the middle area. Brightness fades are
+    gamma-corrected so crossfades and pulses look smooth on LEDs."""
     render.draw_text_centered(ctx.gfx, canvas, ctx.font_small, CARD_LABEL_BASELINE,
-                              scale(DIM_GREY, brightness), sanitize(label), ctx.width)
+                              fade(DIM_GREY, brightness), sanitize(label), ctx.width)
     render.draw_text_centered(ctx.gfx, canvas, ctx.font_big, CARD_VALUE_BASELINE,
-                              scale(color, brightness), sanitize(value), ctx.width)
+                              fade(color, brightness), sanitize(value), ctx.width)
 
 
 class Scene:
@@ -115,11 +124,20 @@ class IdleScene(Scene):
         self.card_index = 0
 
     def _cards(self, ctx: RenderContext):
-        return [
+        # Blinking colon makes the clock feel alive (fonts are monospaced,
+        # so swapping ":" for " " doesn't shift the centering)
+        clock = datetime.now().strftime("%H:%M" if int(ctx.t) % 2 == 0 else "%H %M")
+        cards = [
             ("POSTS", str(ctx.visible_posts), MESH_GREEN),
-            ("TIME", datetime.now().strftime("%H:%M"), SOFT_WHITE),
+            ("TIME", clock, SOFT_WHITE),
             ("ALL TIME", str(ctx.total_posts), AMBER),
         ]
+        if ctx.recent_posts:
+            # Tease the newest post's author, trimmed to the panel width
+            # (the big font is 6px per character)
+            max_chars = max(3, ctx.width // 6)
+            cards.append(("LATEST", ellipsize(ctx.recent_posts[0].author, max_chars), TEAL))
+        return cards
 
     def step(self, dt: float, ctx: RenderContext):
         self.elapsed += dt
@@ -127,8 +145,17 @@ class IdleScene(Scene):
             self.elapsed = 0.0
             self.card_index += 1
 
+    def _draw_twinkles(self, canvas, ctx: RenderContext):
+        """A few slow ambient twinkles so the card area never looks frozen."""
+        for i in range(6):
+            x = (i * 23 + 5) % ctx.width
+            y = 9 + (i * 7) % 15  # Stay inside the card area rows
+            brightness = pulse(ctx.t + i * 1.1, period=3.5 + i * 0.3, low=0.0, high=0.4)
+            canvas.SetPixel(x, y, *fade(MESH_GREEN, brightness))
+
     def draw(self, canvas, ctx: RenderContext):
         draw_chrome(canvas, ctx)
+        self._draw_twinkles(canvas, ctx)
         cards = self._cards(ctx)
         current = cards[self.card_index % len(cards)]
         previous = cards[(self.card_index - 1) % len(cards)]
@@ -149,8 +176,11 @@ class TickerScene(Scene):
         self._lines = [
             ScrollLine(
                 ctx.font_big, ctx.width,
-                body=sanitize(ellipsize(p.content, 60) + f"  - {p.author}"),
-                prefix=sanitize(f"#{p.post_id} "),
+                segments=[
+                    (sanitize(f"#{p.post_id} "), AMBER),
+                    (sanitize(ellipsize(p.content, 60)), SOFT_WHITE),
+                    (sanitize(f"  - {p.author}"), MESH_GREEN),
+                ],
                 speed_px_s=24.0,
             )
             for p in posts
@@ -172,8 +202,7 @@ class TickerScene(Scene):
     def draw(self, canvas, ctx: RenderContext):
         draw_chrome(canvas, ctx)
         if not self.done:
-            self._lines[self._index].draw(ctx.gfx, canvas, SCROLL_BASELINE,
-                                          SOFT_WHITE, prefix_color=AMBER)
+            self._lines[self._index].draw(ctx.gfx, canvas, SCROLL_BASELINE)
 
 
 class AlertScene(Scene):
@@ -186,14 +215,23 @@ class AlertScene(Scene):
     BANNER_SECONDS = 1.4
 
     def __init__(self, ctx: RenderContext, event):
+        # Color language: green announces a new post, amber a reply, so a
+        # passer-by can tell the event type from across the room
         if isinstance(event, NewComment):
             self.banner_word = "REPLY"
+            self.accent = AMBER
         else:
             self.banner_word = "POST"
-        body = sanitize(ellipsize(event.content, 120) + f"  - {event.author}")
-        prefix = sanitize(f"#{event.post_id} ")
-        self._scroll = ScrollLine(ctx.font_big, ctx.width, body=body, prefix=prefix,
-                                  speed_px_s=26.0, passes=2)
+            self.accent = MESH_GREEN
+        self._scroll = ScrollLine(
+            ctx.font_big, ctx.width,
+            segments=[
+                (sanitize(f"#{event.post_id} "), AMBER),
+                (sanitize(ellipsize(event.content, 120)), SOFT_WHITE),
+                (sanitize(f"  - {event.author}"), MESH_GREEN),
+            ],
+            speed_px_s=26.0, passes=2,
+        )
         self.elapsed = 0.0
 
     @property
@@ -213,38 +251,38 @@ class AlertScene(Scene):
             self._draw_banner(canvas, ctx)
         else:
             draw_chrome(canvas, ctx)
-            self._scroll.draw(ctx.gfx, canvas, SCROLL_BASELINE,
-                              SOFT_WHITE, prefix_color=AMBER)
+            self._scroll.draw(ctx.gfx, canvas, SCROLL_BASELINE)
 
     def _draw_rings(self, canvas, ctx: RenderContext):
-        """Expanding concentric rings in Meshtastic green, like a radio ping."""
+        """Expanding concentric rings in the event color, like a radio ping."""
         progress = self.elapsed / self.RINGS_SECONDS
         cx = (ctx.width - 1) / 2
         cy = (ctx.height - 1) / 2
         max_radius = math.hypot(cx, cy) + 4
         lead = progress * max_radius
-        for trail, brightness in ((0, 1.0), (3, 0.45), (6, 0.18)):
+        for trail, brightness in ((0, 1.0), (3, 0.6), (6, 0.35)):
             radius = lead - trail
             render.draw_ring(canvas, cx, cy, radius,
-                             scale(MESH_GREEN, brightness), ctx.width, ctx.height)
+                             fade(self.accent, brightness), ctx.width, ctx.height)
         if progress < 0.25:
-            canvas.SetPixel(int(cx), int(cy), *MESH_GREEN)
+            canvas.SetPixel(int(cx), int(cy), *self.accent)
 
     def _draw_banner(self, canvas, ctx: RenderContext):
-        """'NEW POST' with a soft pulse and a few background twinkles."""
+        """'NEW POST' / 'NEW REPLY' with a soft pulse and background twinkles."""
         t = self.elapsed - self.RINGS_SECONDS
         brightness = pulse(t, period=0.9, low=0.55, high=1.0)
 
-        # Deterministic sparse twinkles (no randomness = no flicker artifacts)
+        # Deterministic sparse twinkles (no randomness = no flicker artifacts),
+        # tinted to match the event color
         for i in range(7):
             x = (i * 13 + int(t * 10) * 7) % ctx.width
             y = (i * 7 + int(t * 10) * 5) % ctx.height
-            canvas.SetPixel(x, y, *scale(NIGHT_GREEN, 0.8))
+            canvas.SetPixel(x, y, *scale(self.accent, 0.2))
 
         render.draw_text_centered(ctx.gfx, canvas, ctx.font_big, 14,
-                                  scale(AMBER, brightness), "NEW", ctx.width)
+                                  fade(self.accent, brightness), "NEW", ctx.width)
         render.draw_text_centered(ctx.gfx, canvas, ctx.font_big, 26,
-                                  scale(SOFT_WHITE, brightness), self.banner_word, ctx.width)
+                                  fade(SOFT_WHITE, brightness), self.banner_word, ctx.width)
 
 
 class BrandScene(Scene):
@@ -265,8 +303,10 @@ class BrandScene(Scene):
 
     def __init__(self, ctx: RenderContext):
         self._scroll = ScrollLine(ctx.font_big, ctx.width,
-                                  body=sanitize("Nodeice Board"),
-                                  prefix=sanitize("Meshtastic "),
+                                  segments=[
+                                      (sanitize("Meshtastic "), MESH_GREEN),
+                                      (sanitize("Nodeice Board"), SOFT_WHITE),
+                                  ],
                                   speed_px_s=24.0)
         self.elapsed = 0.0
 
@@ -289,8 +329,7 @@ class BrandScene(Scene):
         else:
             # Mini logo up top, the name scrolling through the big font
             self._draw_logo(canvas, ctx, 8, 2, ctx.width - 17, 10, 1.0)
-            self._scroll.draw(ctx.gfx, canvas, 26, SOFT_WHITE,
-                              prefix_color=MESH_GREEN)
+            self._scroll.draw(ctx.gfx, canvas, 26)
 
     def _draw_logo(self, canvas, ctx: RenderContext,
                    x0: int, y0: int, w: int, h: int, progress: float):
@@ -306,7 +345,7 @@ class BrandScene(Scene):
         total = sum(lengths)
         target = progress * total
 
-        node_color = scale(MESH_GREEN, pulse(ctx.t, period=1.8, low=0.7, high=1.0))
+        node_color = fade(MESH_GREEN, pulse(ctx.t, period=1.8, low=0.8, high=1.0))
         line_color = scale(MESH_GREEN, 0.7)
 
         remaining = target
@@ -329,10 +368,10 @@ class BrandScene(Scene):
 
             ping_age = self.elapsed - (travelled / total) * self.TRACE_SECONDS
             if 0.0 <= ping_age < self.PING_SECONDS:
-                fade = 1.0 - ping_age / self.PING_SECONDS
-                radius = 1.5 + (1.0 - fade) * 5.0
+                ping_fade = 1.0 - ping_age / self.PING_SECONDS
+                radius = 1.5 + (1.0 - ping_fade) * 5.0
                 render.draw_ring(canvas, point[0], point[1], radius,
-                                 scale(MESH_GREEN, 0.5 * fade),
+                                 fade(MESH_GREEN, 0.7 * ping_fade),
                                  ctx.width, ctx.height)
             if i < len(lengths):
                 travelled += lengths[i]

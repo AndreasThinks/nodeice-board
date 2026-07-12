@@ -51,7 +51,8 @@ class CommandHandler:
         self.info_url = get_info_url(self.config)
         self.expiration_days = get_expiration_days(self.config)
 
-    def handle_message(self, message: str, sender_id: str, is_dm: bool = False) -> bool:
+    def handle_message(self, message: str, sender_id: str, is_dm: bool = False,
+                       sender_name: Optional[str] = None) -> bool:
         """
         Handle an incoming message.
 
@@ -61,6 +62,9 @@ class CommandHandler:
             is_dm: True when the message was a direct message to this node.
                 Unrecognised direct messages get a pointer to !help;
                 channel broadcasts never do.
+            sender_name: The sender's human-readable name from the node
+                database, if known. Stored alongside posts and comments so
+                they can be attributed by name rather than node ID.
 
         Returns:
             True if message was handled as a command, False otherwise.
@@ -108,7 +112,7 @@ class CommandHandler:
             if match:
                 content = match.group(1).strip()
                 self.logger.debug(f"Matched !post command from {sender_id}: {content[:20]}...")
-                return self.handle_post_command(content, sender_id)
+                return self.handle_post_command(content, sender_id, sender_name)
                 
             match = CommandHandler.LIST_CMD.match(message)
             if match:
@@ -147,7 +151,7 @@ class CommandHandler:
                     content = match.group(2).strip()
                     content = self.sanitize_content(content)
                     self.logger.debug(f"Matched !comment command from {sender_id} for post #{post_id}: {content[:20]}...")
-                    return self.handle_comment_command(post_id, content, sender_id)
+                    return self.handle_comment_command(post_id, content, sender_id, sender_name)
                 except ValueError:
                     self.send_message("Invalid post ID. Please use a number.", sender_id)
                     return False
@@ -278,21 +282,23 @@ class CommandHandler:
             
         return content
         
-    def handle_post_command(self, content: str, sender_id: str) -> bool:
+    def handle_post_command(self, content: str, sender_id: str,
+                            sender_name: Optional[str] = None) -> bool:
         """
         Handle the !post command.
-        
+
         Args:
             content: The content of the post.
             sender_id: The ID of the sender.
-            
+            sender_name: The sender's human-readable name, if known.
+
         Returns:
             True if the post was created successfully.
         """
         try:
             # Sanitize content before storing
             content = self.sanitize_content(content)
-            post_id = self.db.create_post(content, sender_id)
+            post_id = self.db.create_post(content, sender_id, sender_name)
             response = f"Post #{post_id} created successfully!"
             
             # Notify subscribers who are subscribed to all posts
@@ -395,27 +401,29 @@ class CommandHandler:
             self.send_message(error_msg, sender_id)
             return False
             
-    def handle_comment_command(self, post_id: int, content: str, sender_id: str) -> bool:
+    def handle_comment_command(self, post_id: int, content: str, sender_id: str,
+                               sender_name: Optional[str] = None) -> bool:
         """
         Handle the !comment command.
-        
+
         Args:
             post_id: The ID of the post to comment on.
             content: The content of the comment.
             sender_id: The ID of the sender.
-            
+            sender_name: The sender's human-readable name, if known.
+
         Returns:
             True if the comment was created successfully.
         """
         try:
             # Check if post exists
             post = self.db.get_post(post_id)
-            
+
             if not post:
                 return self.send_message(f"Post #{post_id} not found.", sender_id)
-                
+
             # Create comment
-            comment_id = self.db.create_comment(post_id, content, sender_id)
+            comment_id = self.db.create_comment(post_id, content, sender_id, sender_name)
             response = f"Comment added to post #{post_id}"
             
             # Notify subscribers who are subscribed to this post

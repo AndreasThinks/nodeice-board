@@ -186,6 +186,9 @@ class MeshtasticInterface:
             to_id = packet.get("toId", packet.get("to"))
             is_dm = to_id not in (None, meshtastic.BROADCAST_ADDR, meshtastic.BROADCAST_NUM)
 
+            # Resolve the sender's human-readable name from the node database
+            sender_name = self.get_node_name(from_id)
+
             # Create a unique identifier for this message
             if message_id:
                 message_key = f"{message_id}"
@@ -213,7 +216,7 @@ class MeshtasticInterface:
             if self.on_message_callback:
                 self.logger.debug(f"Calling on_message_callback with message: '{message}' from {from_id}")
                 try:
-                    self.on_message_callback(message, from_id, is_dm)
+                    self.on_message_callback(message, from_id, is_dm, sender_name)
                     self.logger.debug(f"on_message_callback completed successfully for message: '{message}'")
                 except Exception as callback_error:
                     self.logger.error(f"Error in on_message_callback: {callback_error}")
@@ -224,6 +227,41 @@ class MeshtasticInterface:
             self.logger.error(f"Error processing received message: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             self.logger.error(f"Packet data: {packet}")
+
+    def get_node_name(self, node_id: str) -> Optional[str]:
+        """
+        Look up a node's human-readable name in the device's node database.
+
+        Args:
+            node_id: The node ID as received in a packet (usually "!hexid",
+                occasionally a bare node number).
+
+        Returns:
+            The node's long name, falling back to its short name, or None
+            if the node isn't in the database or has no name set.
+        """
+        if not self.interface:
+            return None
+
+        try:
+            nodes = getattr(self.interface, "nodes", None) or {}
+            node = nodes.get(node_id)
+
+            # Packets sometimes carry the numeric node number instead of
+            # the "!hexid" user ID; try the by-number table for those
+            if node is None and node_id.lstrip("-").isdigit():
+                nodes_by_num = getattr(self.interface, "nodesByNum", None) or {}
+                node = nodes_by_num.get(int(node_id))
+
+            if not node:
+                return None
+
+            user = node.get("user", {})
+            name = user.get("longName") or user.get("shortName")
+            return name if name and name.strip() else None
+        except Exception as e:
+            self.logger.debug(f"Could not resolve name for node {node_id}: {e}")
+            return None
 
     @classmethod
     def _split_line_into_chunks(cls, line: str, max_bytes: int) -> List[str]:
